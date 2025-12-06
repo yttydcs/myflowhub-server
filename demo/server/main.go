@@ -130,7 +130,7 @@ func buildProcess(cfg core.IConfig, logger *slog.Logger) (*process.DispatcherPro
 		slog.Error("注册 Echo handler 失败", "err", err)
 		return nil, err
 	}
-	if err := dispatcher.RegisterHandler(handler.NewLoginHandler(logger)); err != nil {
+	if err := dispatcher.RegisterHandler(handler.NewLoginHandlerWithConfig(cfg, logger)); err != nil {
 		slog.Error("注册 Login handler 失败", "err", err)
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
+	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
 const (
@@ -70,18 +71,26 @@ type VarStoreHandler struct {
 	records map[string]varRecord       // key: ownerID:name
 	pending map[string][]string        // name -> waiting connIDs for get responses
 	cache   map[string]map[uint32]bool // name -> owners known
+
+	permCfg permission.Config
 }
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
+	return NewVarStoreHandlerWithConfig(nil, log)
+}
+
+func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreHandler {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &VarStoreHandler{
+	h := &VarStoreHandler{
 		log:     log,
 		records: make(map[string]varRecord),
 		pending: make(map[string][]string),
 		cache:   make(map[string]map[uint32]bool),
 	}
+	h.permCfg = permission.NewConfig(cfg)
+	return h
 }
 
 // AcceptCmd 声明 Cmd 帧在 target!=local 时也需要本地处理一次。
@@ -120,11 +129,16 @@ func (h *VarStoreHandler) handleSet(ctx context.Context, conn core.IConnection, 
 		return
 	}
 	source := hdr.SourceID()
+	actorID := permission.SourceNodeID(hdr, conn)
 	existingRec, existingOwner, found := h.lookupAny(req.Name)
 
 	// creation rule: only owner (SourceID) can create when not found
 	if !found && source == 0 {
 		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 403, Msg: "owner required"})
+		return
+	}
+	if needsPrivatePermission(found, existingRec, req) && !h.hasPermission(actorID, permission.VarPrivateSet) {
+		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 4403, Msg: "permission denied", Name: req.Name})
 		return
 	}
 
@@ -405,6 +419,28 @@ func (h *VarStoreHandler) notifyOwner(ctx context.Context, owner uint32, name, v
 	})
 }
 
+func needsPrivatePermission(found bool, current varRecord, req setReq) bool {
+	if found {
+		nextVis := current.Visibility
+		if strings.TrimSpace(req.Visibility) != "" {
+			nextVis = req.Visibility
+		}
+		if strings.TrimSpace(nextVis) == "" {
+			if current.IsPublic {
+				nextVis = visibilityPublic
+			} else {
+				nextVis = visibilityPrivate
+			}
+		}
+		return strings.ToLower(nextVis) != visibilityPublic
+	}
+	vis := strings.ToLower(strings.TrimSpace(req.Visibility))
+	if vis == "" {
+		vis = visibilityPrivate
+	}
+	return vis != visibilityPublic
+}
+
 func visString(rec varRecord) string {
 	if rec.IsPublic {
 		return visibilityPublic
@@ -457,4 +493,8 @@ func shouldForwardUp(ctx context.Context, hdr core.IHeader) bool {
 	tgt := hdr.TargetID()
 	// 仅在目标是本地或 0（上送父）时由 handler 主动上行；否则预路由已转发，无需重复。
 	return tgt == 0 || tgt == local
+}
+
+func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
+	return h.permCfg.Has(nodeID, perm)
 }

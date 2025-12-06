@@ -194,6 +194,74 @@ func TestVarStorePrivateUpdateForbidden(t *testing.T) {
 	}
 }
 
+func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
+	cfg := config.NewMap(map[string]string{
+		config.KeyAuthDefaultPerms: "",
+		config.KeyAuthNodeRoles:    "10:writer",
+		config.KeyAuthRolePerms:    "writer:var.private_set",
+	})
+	h := handler.NewVarStoreHandlerWithConfig(cfg, nil)
+	cm := connmgr.New()
+	parent := newRecordConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+	srv := newRecordServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	unauth := newRecordConn("unauth")
+	unauth.SetMeta("nodeID", uint32(20))
+	_ = cm.Add(unauth)
+	req := setJSON("set", "secret", "value", "private", "")
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(20)
+	h.OnReceive(ctx, unauth, hdr, req)
+	if len(unauth.sent) == 0 {
+		t.Fatalf("expected resp for unauthorized writer")
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(unauth.sent[0].payload, &msg)
+	if msg.Action != "set_resp" {
+		t.Fatalf("unexpected action %s", msg.Action)
+	}
+	var resp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(msg.Data, &resp)
+	if resp.Code != 4403 {
+		t.Fatalf("expected 4403 for unauthorized, got %d", resp.Code)
+	}
+
+	auth := newRecordConn("auth")
+	auth.SetMeta("nodeID", uint32(10))
+	_ = cm.Add(auth)
+	goodHdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(10)
+	h.OnReceive(ctx, auth, goodHdr, req)
+	if len(auth.sent) == 0 {
+		t.Fatalf("expected success resp for authorized node")
+	}
+	var msgAuth struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(auth.sent[0].payload, &msgAuth)
+	var okResp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(msgAuth.Data, &okResp)
+	if okResp.Code != 1 {
+		t.Fatalf("expected success for authorized, got %d", okResp.Code)
+	}
+}
+
 func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 	h := handler.NewVarStoreHandler(nil)
 	cm := connmgr.New()

@@ -26,7 +26,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	rootCfg := config.NewMap(map[string]string{"addr": rootAddr})
 	rootSrv := startTestServer(t, server.Options{
 		Name:     "Root",
-		Process:  makeProcess(t, rootCfg, []core.ISubProcess{handler.NewLoginHandler(nil), handler.NewVarStoreHandler(nil)}),
+		Process:  makeProcess(t, rootCfg, []core.ISubProcess{handler.NewLoginHandlerWithConfig(rootCfg, nil), handler.NewVarStoreHandlerWithConfig(rootCfg, nil)}),
 		Codec:    header.HeaderTcpCodec{},
 		Listener: tcp_listener.New(rootAddr),
 		Config:   rootCfg,
@@ -54,7 +54,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	})
 	hubSrv := startTestServer(t, server.Options{
 		Name:     "Hub",
-		Process:  makeProcess(t, hubCfg, []core.ISubProcess{handler.NewLoginHandler(nil), handler.NewVarStoreHandler(nil)}),
+		Process:  makeProcess(t, hubCfg, []core.ISubProcess{handler.NewLoginHandlerWithConfig(hubCfg, nil), handler.NewVarStoreHandlerWithConfig(hubCfg, nil)}),
 		Codec:    header.HeaderTcpCodec{},
 		Listener: tcp_listener.New(hubAddr),
 		Config:   hubCfg,

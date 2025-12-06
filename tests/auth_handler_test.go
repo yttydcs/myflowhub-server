@@ -160,6 +160,48 @@ func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 	}
 }
 
+func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
+	cfg := config.NewMap(map[string]string{
+		config.KeyAuthDefaultPerms: "",
+		config.KeyAuthNodeRoles:    "100:guest",
+		config.KeyAuthRolePerms:    "admin:auth.revoke",
+	})
+	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	cm := connmgr.New()
+	conn := newAuthConn("guest")
+	conn.SetMeta("nodeID", uint32(100))
+	_ = cm.Add(conn)
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	req := mustJSON(map[string]any{"action": "revoke", "data": map[string]any{"device_id": "dev-100"}})
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(2).
+		WithSourceID(100)
+
+	h.OnReceive(ctx, conn, hdr, req)
+
+	if len(conn.sent) == 0 {
+		t.Fatalf("expected revoke_resp for permission failure")
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(conn.sent[0].payload, &msg)
+	if msg.Action != "revoke_resp" {
+		t.Fatalf("unexpected action %s", msg.Action)
+	}
+	var resp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(msg.Data, &resp)
+	if resp.Code != 4403 {
+		t.Fatalf("expected 4403, got %d", resp.Code)
+	}
+}
+
 // --- helpers ---
 
 type authConn struct {

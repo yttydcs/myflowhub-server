@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +15,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
+	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
 const (
@@ -123,10 +123,7 @@ type LoginHandler struct {
 
 	authNode uint32
 
-	defaultRole  string
-	defaultPerms []string
-	nodeRoles    map[uint32]string
-	rolePerms    map[string][]string
+	permCfg permission.Config
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -141,9 +138,6 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 		log:         log,
 		whitelist:   make(map[string]bindingRecord),
 		pendingConn: make(map[string]string),
-		defaultRole: "node",
-		nodeRoles:   make(map[uint32]string),
-		rolePerms:   make(map[string][]string),
 	}
 	h.loadAuthConfig(cfg)
 	h.nextID.Store(2)
@@ -173,7 +167,7 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 	case actionLoginResp:
 		h.handleLoginResp(ctx, msg.Data)
 	case actionRevoke:
-		h.handleRevoke(ctx, conn, msg.Data)
+		h.handleRevoke(ctx, conn, hdr, msg.Data)
 	case actionAssistQueryCred:
 		h.handleAssistQuery(ctx, conn, hdr, msg.Data)
 	case actionAssistQueryCredResp:
@@ -327,18 +321,23 @@ func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage
 }
 
 // revoke handling: broadcast; respond only if deleted or credential mismatch
-func (h *LoginHandler) handleRevoke(ctx context.Context, conn core.IConnection, data json.RawMessage) {
+func (h *LoginHandler) handleRevoke(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	var req revokeData
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
+		return
+	}
+	actorID := permission.SourceNodeID(hdr, conn)
+	if !h.hasPermission(actorID, permission.AuthRevoke) {
+		h.sendResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 4403, Msg: "permission denied", DeviceID: req.DeviceID, NodeID: req.NodeID})
 		return
 	}
 	removed, mismatch := h.removeBinding(req.DeviceID, req.Credential)
 	if removed || mismatch {
 		// respond only when changed/mismatch
 		if mismatch {
-			h.sendResp(ctx, conn, nil, actionRevokeResp, respData{Code: 4402, Msg: "credential mismatch", DeviceID: req.DeviceID, NodeID: req.NodeID})
+			h.sendResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 4402, Msg: "credential mismatch", DeviceID: req.DeviceID, NodeID: req.NodeID})
 		} else {
-			h.sendResp(ctx, conn, nil, actionRevokeResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: req.NodeID})
+			h.sendResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: req.NodeID})
 		}
 	}
 	// broadcast downstream and upstream except source
@@ -465,6 +464,22 @@ func (h *LoginHandler) lookup(deviceID string) (bindingRecord, bool) {
 		h.mu.Unlock()
 	}
 	return rec, ok
+}
+
+func (h *LoginHandler) hasPermission(nodeID uint32, perm string) bool {
+	if perm == "" || nodeID == 0 {
+		return true
+	}
+	_, perms, ok := h.lookupByNode(nodeID)
+	if !ok {
+		return false
+	}
+	for _, entry := range perms {
+		if entry == permission.Wildcard || entry == perm {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *LoginHandler) ensureNodeID(deviceID string) uint32 {
@@ -738,38 +753,15 @@ func (h *LoginHandler) handlePermsInvalidate(ctx context.Context, raw json.RawMe
 
 // auth/permission helpers
 func (h *LoginHandler) loadAuthConfig(cfg core.IConfig) {
-	if cfg == nil {
-		return
-	}
-	if raw, ok := cfg.Get(coreconfig.KeyAuthDefaultRole); ok && strings.TrimSpace(raw) != "" {
-		h.defaultRole = strings.TrimSpace(raw)
-	}
-	if raw, ok := cfg.Get(coreconfig.KeyAuthDefaultPerms); ok {
-		h.defaultPerms = parseList(raw)
-	}
-	if raw, ok := cfg.Get(coreconfig.KeyAuthNodeRoles); ok {
-		h.nodeRoles = parseNodeRoles(raw)
-	}
-	if raw, ok := cfg.Get(coreconfig.KeyAuthRolePerms); ok {
-		h.rolePerms = parseRolePerms(raw)
-	}
+	h.permCfg = permission.NewConfig(cfg)
 }
 
 func (h *LoginHandler) resolveRole(nodeID uint32) string {
-	if nodeID != 0 {
-		if r, ok := h.nodeRoles[nodeID]; ok && strings.TrimSpace(r) != "" {
-			return strings.TrimSpace(r)
-		}
-	}
-	return h.defaultRole
+	return h.permCfg.ResolveRole(nodeID)
 }
 
 func (h *LoginHandler) resolvePerms(nodeID uint32) []string {
-	role := h.resolveRole(nodeID)
-	if perms, ok := h.rolePerms[role]; ok {
-		return cloneSlice(perms)
-	}
-	return cloneSlice(h.defaultPerms)
+	return h.permCfg.ResolvePerms(nodeID)
 }
 
 func (h *LoginHandler) resolveRolePerms(nodeID uint32) (string, []string) {
@@ -835,7 +827,8 @@ func (h *LoginHandler) listRolePerms() []rolePermEntry {
 	}
 	h.mu.RUnlock()
 
-	entries := make([]rolePermEntry, 0, len(seen)+len(h.nodeRoles))
+	nodeRoles := h.permCfg.NodeRoles()
+	entries := make([]rolePermEntry, 0, len(seen)+len(nodeRoles))
 	for nid := range seen {
 		role, perms, ok := h.lookupByNode(nid)
 		if !ok {
@@ -843,7 +836,7 @@ func (h *LoginHandler) listRolePerms() []rolePermEntry {
 		}
 		entries = append(entries, rolePermEntry{NodeID: nid, Role: role, Perms: perms})
 	}
-	for nid, role := range h.nodeRoles {
+	for nid, role := range nodeRoles {
 		if seen[nid] {
 			continue
 		}
@@ -942,60 +935,6 @@ func filterRolePerms(entries []rolePermEntry, req listRolesReq) ([]rolePermEntry
 		end = total
 	}
 	return filtered[offset:end], total
-}
-
-func parseList(raw string) []string {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func parseNodeRoles(raw string) map[uint32]string {
-	m := make(map[uint32]string)
-	pairs := strings.Split(raw, ";")
-	for _, p := range pairs {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		kv := strings.SplitN(p, ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		id, err1 := strconv.ParseUint(strings.TrimSpace(kv[0]), 10, 32)
-		role := strings.TrimSpace(kv[1])
-		if err1 == nil && role != "" {
-			m[uint32(id)] = role
-		}
-	}
-	return m
-}
-
-func parseRolePerms(raw string) map[string][]string {
-	m := make(map[string][]string)
-	pairs := strings.Split(raw, ";")
-	for _, p := range pairs {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		kv := strings.SplitN(p, ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		role := strings.TrimSpace(kv[0])
-		if role == "" {
-			continue
-		}
-		m[role] = parseList(kv[1])
-	}
-	return m
 }
 
 func cloneSlice[T any](src []T) []T {
