@@ -121,6 +121,8 @@ func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, 
 		h.handleGet(ctx, conn, hdr, msg.Data, true)
 	case actionVarAssistGetResp:
 		h.handleGetResp(ctx, msg.Data)
+	case actionVarNotifyUpdate:
+		h.handleNotifyUpdate(msg.Data)
 	default:
 		h.log.Debug("unknown varstore action", "action", act)
 	}
@@ -267,6 +269,27 @@ func (h *VarStoreHandler) handleGetResp(ctx context.Context, data json.RawMessag
 		h.addOwnerCache(resp.Name, resp.Owner)
 		h.mu.Unlock()
 	}
+}
+
+// handleNotifyUpdate refreshes caches when relay hubs observe owner notifications in-flight.
+func (h *VarStoreHandler) handleNotifyUpdate(data json.RawMessage) {
+	var resp varResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+	if resp.Owner == 0 || resp.Name == "" {
+		return
+	}
+	h.mu.Lock()
+	h.records[h.key(resp.Owner, resp.Name)] = varRecord{
+		Value:      resp.Value,
+		Owner:      resp.Owner,
+		IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
+		Visibility: resp.Visibility,
+		Type:       resp.Type,
+	}
+	h.addOwnerCache(resp.Name, resp.Owner)
+	h.mu.Unlock()
 }
 
 // helpers
