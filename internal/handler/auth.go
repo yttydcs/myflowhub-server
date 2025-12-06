@@ -147,6 +147,9 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
 
+// AllowSourceMismatch 登录阶段允许 SourceID 与连接元数据不一致（尚未绑定 nodeID）。
+func (h *LoginHandler) AllowSourceMismatch() bool { return true }
+
 func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg message
 	if err := json.Unmarshal(payload, &msg); err != nil {
@@ -154,6 +157,10 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 		return
 	}
 	act := strings.ToLower(strings.TrimSpace(msg.Action))
+	if h.requiresAuth(act) && !h.sourceMatches(conn, hdr) {
+		h.log.Warn("drop login action due to source mismatch", "action", act, "hdr_source", hdr.SourceID())
+		return
+	}
 	switch act {
 	case actionRegister:
 		h.handleRegister(ctx, conn, hdr, msg.Data, false)
@@ -188,6 +195,32 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 	default:
 		h.log.Debug("unknown login action", "action", act)
 	}
+}
+
+// requiresAuth 标记哪些 action 需要来源校验：默认需要，注册/登录相关放行。
+func (h *LoginHandler) requiresAuth(action string) bool {
+	switch action {
+	case actionRegister, actionAssistRegister, actionRegisterResp, actionAssistRegisterResp,
+		actionLogin, actionAssistLogin, actionLoginResp, actionAssistLoginResp:
+		return false
+	}
+	return true
+}
+
+// sourceMatches 检查连接上的 nodeID 与 header.SourceID 是否一致且已绑定。
+func (h *LoginHandler) sourceMatches(conn core.IConnection, hdr core.IHeader) bool {
+	if conn == nil || hdr == nil {
+		return false
+	}
+	meta, ok := conn.GetMeta("nodeID")
+	if !ok {
+		return false
+	}
+	nid, ok := meta.(uint32)
+	if !ok || nid == 0 {
+		return false
+	}
+	return hdr.SourceID() == nid
 }
 
 // register handling

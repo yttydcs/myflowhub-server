@@ -138,6 +138,9 @@ func NewAuthorityHandlerWithConfig(store Store, cfg core.IConfig, log *slog.Logg
 
 func (h *AuthorityHandler) SubProto() uint8 { return 2 }
 
+// AllowSourceMismatch 权威登录入口允许 SourceID 与连接元数据不一致（未绑定 nodeID 前）。
+func (h *AuthorityHandler) AllowSourceMismatch() bool { return true }
+
 func (h *AuthorityHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg message
 	if err := json.Unmarshal(payload, &msg); err != nil {
