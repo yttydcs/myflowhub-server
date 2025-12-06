@@ -72,7 +72,7 @@ type VarStoreHandler struct {
 	pending map[string][]string        // name -> waiting connIDs for get responses
 	cache   map[string]map[uint32]bool // name -> owners known
 
-	permCfg permission.Config
+	permCfg *permission.Config
 }
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
@@ -89,7 +89,12 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 		pending: make(map[string][]string),
 		cache:   make(map[string]map[uint32]bool),
 	}
-	h.permCfg = permission.NewConfig(cfg)
+	if cfg != nil {
+		h.permCfg = permission.SharedConfig(cfg)
+	}
+	if h.permCfg == nil {
+		h.permCfg = permission.NewConfig(nil)
+	}
 	return h
 }
 
@@ -496,5 +501,8 @@ func shouldForwardUp(ctx context.Context, hdr core.IHeader) bool {
 }
 
 func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
+	if h.permCfg == nil {
+		return false
+	}
 	return h.permCfg.Has(nodeID, perm)
 }

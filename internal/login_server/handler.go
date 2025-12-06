@@ -12,6 +12,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
+	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
 const (
@@ -34,6 +35,7 @@ const (
 	actionListRoles           = "list_roles"
 	actionListRolesResp       = "list_roles_resp"
 	actionPermsInvalidate     = "perms_invalidate"
+	actionPermsSnapshot       = "perms_snapshot"
 )
 
 type message struct {
@@ -164,6 +166,8 @@ func (h *AuthorityHandler) OnReceive(ctx context.Context, conn core.IConnection,
 		h.handleListRoles(ctx, conn, msg.Data)
 	case actionPermsInvalidate:
 		h.handlePermsInvalidate(msg.Data)
+	case actionPermsSnapshot:
+		h.handlePermsSnapshot(ctx, conn)
 	default:
 		h.log.Debug("unknown login action", "action", act)
 	}
@@ -338,6 +342,27 @@ func (h *AuthorityHandler) handlePermsInvalidate(raw json.RawMessage) {
 	_ = json.Unmarshal(raw, &req)
 	h.invalidateCache(req.NodeIDs)
 	// 权威端不需要上行刷新；若需要下行广播可在调用侧发送
+}
+
+func (h *AuthorityHandler) handlePermsSnapshot(ctx context.Context, conn core.IConnection) {
+	if conn == nil {
+		return
+	}
+	snap := permission.Snapshot{
+		DefaultRole:  h.defaultRole,
+		DefaultPerms: cloneSlice(h.defaultPerms),
+		NodeRoles:    cloneNodeRoleMap(h.nodeRoles),
+		RolePerms:    cloneRolePermMap(h.rolePerms),
+	}
+	payload, _ := json.Marshal(snap)
+	msg := message{Action: actionPermsSnapshot, Data: payload}
+	body, _ := json.Marshal(msg)
+	hdr := h.buildHeader(ctx, nil)
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		_ = srv.Send(ctx, conn.ID(), hdr, body)
+		return
+	}
+	_ = conn.SendWithHeader(hdr, body, header.HeaderTcpCodec{})
 }
 
 func (h *AuthorityHandler) sendResp(ctx context.Context, conn core.IConnection, reqHdr core.IHeader, action string, data respData) {
@@ -624,5 +649,27 @@ func cloneSlice[T any](src []T) []T {
 	}
 	out := make([]T, len(src))
 	copy(out, src)
+	return out
+}
+
+func cloneNodeRoleMap(src map[uint32]string) map[uint32]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[uint32]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneRolePermMap(src map[string][]string) map[string][]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(src))
+	for role, perms := range src {
+		out[role] = cloneSlice(perms)
+	}
 	return out
 }

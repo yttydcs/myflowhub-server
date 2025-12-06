@@ -38,6 +38,7 @@ const (
 	actionListRoles           = "list_roles"
 	actionListRolesResp       = "list_roles_resp"
 	actionPermsInvalidate     = "perms_invalidate"
+	actionPermsSnapshot       = "perms_snapshot"
 )
 
 type message struct {
@@ -123,7 +124,7 @@ type LoginHandler struct {
 
 	authNode uint32
 
-	permCfg permission.Config
+	permCfg *permission.Config
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -182,6 +183,8 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 		h.handleListRoles(ctx, conn, msg.Data)
 	case actionPermsInvalidate:
 		h.handlePermsInvalidate(ctx, msg.Data)
+	case actionPermsSnapshot:
+		h.handlePermsSnapshot(ctx, conn, msg.Data)
 	default:
 		h.log.Debug("unknown login action", "action", act)
 	}
@@ -751,16 +754,40 @@ func (h *LoginHandler) handlePermsInvalidate(ctx context.Context, raw json.RawMe
 	}
 }
 
+func (h *LoginHandler) handlePermsSnapshot(ctx context.Context, conn core.IConnection, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	var snap permission.Snapshot
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		h.log.Warn("invalid perms snapshot", "err", err)
+		return
+	}
+	h.applyPermSnapshot(ctx, snap)
+	h.broadcastPermsSnapshot(ctx, conn, raw)
+}
+
 // auth/permission helpers
 func (h *LoginHandler) loadAuthConfig(cfg core.IConfig) {
-	h.permCfg = permission.NewConfig(cfg)
+	if cfg != nil {
+		h.permCfg = permission.SharedConfig(cfg)
+	}
+	if h.permCfg == nil {
+		h.permCfg = permission.NewConfig(nil)
+	}
 }
 
 func (h *LoginHandler) resolveRole(nodeID uint32) string {
+	if h.permCfg == nil {
+		return ""
+	}
 	return h.permCfg.ResolveRole(nodeID)
 }
 
 func (h *LoginHandler) resolvePerms(nodeID uint32) []string {
+	if h.permCfg == nil {
+		return nil
+	}
 	return h.permCfg.ResolvePerms(nodeID)
 }
 
@@ -771,6 +798,9 @@ func (h *LoginHandler) resolveRolePerms(nodeID uint32) (string, []string) {
 func (h *LoginHandler) applyRolePerms(deviceID string, nodeID uint32, role string, perms []string, conn core.IConnection) {
 	if role == "" && len(perms) == 0 {
 		return
+	}
+	if h.permCfg != nil {
+		h.permCfg.UpsertNode(nodeID, role, perms)
 	}
 	h.mu.Lock()
 	rec, ok := h.whitelist[deviceID]
@@ -827,7 +857,10 @@ func (h *LoginHandler) listRolePerms() []rolePermEntry {
 	}
 	h.mu.RUnlock()
 
-	nodeRoles := h.permCfg.NodeRoles()
+	var nodeRoles map[uint32]string
+	if h.permCfg != nil {
+		nodeRoles = h.permCfg.NodeRoles()
+	}
 	entries := make([]rolePermEntry, 0, len(seen)+len(nodeRoles))
 	for nid := range seen {
 		role, perms, ok := h.lookupByNode(nid)
@@ -854,6 +887,9 @@ func (h *LoginHandler) invalidateCache(nodeIDs []uint32) {
 			targets[id] = true
 		}
 	}
+	if h.permCfg != nil {
+		h.permCfg.InvalidateNodes(nodeIDs)
+	}
 	h.mu.Lock()
 	if len(targets) == 0 {
 		for k, rec := range h.whitelist {
@@ -875,10 +911,7 @@ func (h *LoginHandler) invalidateCache(nodeIDs []uint32) {
 
 func (h *LoginHandler) refreshPerms(ctx context.Context, nodeIDs []uint32) {
 	if len(nodeIDs) == 0 {
-		return
-	}
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
+		h.requestPermSnapshot(ctx)
 		return
 	}
 	authority := h.selectAuthority(ctx)
@@ -894,6 +927,88 @@ func (h *LoginHandler) refreshPerms(ctx context.Context, nodeIDs []uint32) {
 		req := permsQueryData{NodeID: id}
 		h.forward(ctx, authority, actionGetPerms, req)
 	}
+}
+
+func (h *LoginHandler) requestPermSnapshot(ctx context.Context) {
+	authority := h.selectAuthority(ctx)
+	if authority == nil {
+		return
+	}
+	h.forward(ctx, authority, actionPermsSnapshot, permission.Snapshot{})
+}
+
+func (h *LoginHandler) applyPermSnapshot(ctx context.Context, snap permission.Snapshot) {
+	if h.permCfg == nil {
+		h.permCfg = permission.NewConfig(nil)
+	}
+	h.permCfg.ApplySnapshot(snap)
+	h.mu.Lock()
+	for deviceID, rec := range h.whitelist {
+		if rec.NodeID == 0 {
+			continue
+		}
+		rec.Role = h.resolveRole(rec.NodeID)
+		rec.Perms = h.resolvePerms(rec.NodeID)
+		h.whitelist[deviceID] = rec
+	}
+	h.mu.Unlock()
+	h.refreshConnMetas(ctx)
+}
+
+func (h *LoginHandler) refreshConnMetas(ctx context.Context) {
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+	cm := srv.ConnManager()
+	if cm == nil {
+		return
+	}
+	cm.Range(func(c core.IConnection) bool {
+		nodeMeta, ok := c.GetMeta("nodeID")
+		if !ok {
+			return true
+		}
+		nodeID, ok := nodeMeta.(uint32)
+		if !ok || nodeID == 0 {
+			return true
+		}
+		role := h.resolveRole(nodeID)
+		perms := h.resolvePerms(nodeID)
+		if role != "" {
+			c.SetMeta("role", role)
+		}
+		c.SetMeta("perms", cloneSlice(perms))
+		return true
+	})
+}
+
+func (h *LoginHandler) broadcastPermsSnapshot(ctx context.Context, src core.IConnection, raw json.RawMessage) {
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+	cm := srv.ConnManager()
+	if cm == nil {
+		return
+	}
+	msg := message{Action: actionPermsSnapshot, Data: raw}
+	body, _ := json.Marshal(msg)
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithSourceID(srv.NodeID()).WithTargetID(0)
+	cm.Range(func(c core.IConnection) bool {
+		if src != nil && c.ID() == src.ID() {
+			return true
+		}
+		if role, ok := c.GetMeta(core.MetaRoleKey); ok {
+			if s, ok2 := role.(string); ok2 && s == core.RoleParent {
+				return true
+			}
+		}
+		if err := srv.Send(ctx, c.ID(), hdr, body); err != nil {
+			h.log.Warn("broadcast perms snapshot failed", "conn", c.ID(), "err", err)
+		}
+		return true
+	})
 }
 
 func filterRolePerms(entries []rolePermEntry, req listRolesReq) ([]rolePermEntry, int) {

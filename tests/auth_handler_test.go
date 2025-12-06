@@ -10,6 +10,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
+	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 )
 
@@ -157,6 +158,116 @@ func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 	_ = json.Unmarshal(parent.sent[0].payload, &msg)
 	if msg.Action != "get_perms" {
 		t.Fatalf("expected get_perms, got %s", msg.Action)
+	}
+}
+
+func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	cm := connmgr.New()
+
+	parent := newAuthConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+
+	child := newAuthConn("child")
+	child.SetMeta("nodeID", uint32(10))
+	_ = cm.Add(child)
+
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	req := mustJSON(map[string]any{"action": "perms_invalidate", "data": map[string]any{"refresh": true}})
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	h.OnReceive(ctx, child, hdr, req)
+
+	if len(parent.sent) == 0 {
+		t.Fatalf("expected snapshot request sent to parent")
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(parent.sent[0].payload, &msg)
+	if msg.Action != "perms_snapshot" {
+		t.Fatalf("expected perms_snapshot, got %s", msg.Action)
+	}
+}
+
+func TestLoginHandlerApplyPermsSnapshot(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	cm := connmgr.New()
+
+	parent := newAuthConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+
+	child := newAuthConn("child")
+	child.SetMeta("nodeID", uint32(5))
+	_ = cm.Add(child)
+
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	snap := permission.Snapshot{
+		DefaultRole: "node",
+		NodeRoles:   map[uint32]string{5: "admin"},
+		RolePerms:   map[string][]string{"admin": []string{"perm.a"}},
+	}
+	snapData, _ := json.Marshal(snap)
+	msg := struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}{
+		Action: "perms_snapshot",
+		Data:   snapData,
+	}
+	payload, _ := json.Marshal(msg)
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+
+	h.OnReceive(ctx, parent, hdr, payload)
+
+	if len(child.sent) != 1 {
+		t.Fatalf("expected snapshot forwarded to child")
+	}
+	var forwardMsg struct {
+		Action string `json:"action"`
+	}
+	_ = json.Unmarshal(child.sent[0].payload, &forwardMsg)
+	if forwardMsg.Action != "perms_snapshot" {
+		t.Fatalf("expected forwarded perms_snapshot, got %s", forwardMsg.Action)
+	}
+	if len(parent.sent) != 0 {
+		t.Fatalf("expected no echo to parent")
+	}
+	if roleMeta, _ := child.GetMeta("role"); roleMeta != "admin" {
+		t.Fatalf("expected child role meta updated, got %v", roleMeta)
+	}
+	child.sent = nil
+	req := mustJSON(map[string]any{"action": "get_perms", "data": map[string]any{"node_id": 5}})
+	h.OnReceive(ctx, child, hdr, req)
+	if len(child.sent) == 0 {
+		t.Fatalf("expected get_perms response after snapshot")
+	}
+	var resp struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(child.sent[len(child.sent)-1].payload, &resp)
+	if resp.Action != "get_perms_resp" {
+		t.Fatalf("expected get_perms_resp, got %s", resp.Action)
+	}
+	var body struct {
+		Code  int      `json:"code"`
+		Role  string   `json:"role"`
+		Perms []string `json:"perms"`
+	}
+	_ = json.Unmarshal(resp.Data, &body)
+	if body.Code != 1 || body.Role != "admin" || len(body.Perms) != 1 || body.Perms[0] != "perm.a" {
+		t.Fatalf("unexpected get_perms_resp %+v", body)
 	}
 }
 
