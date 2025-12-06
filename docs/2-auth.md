@@ -1,10 +1,10 @@
-Login/Register 协议（SubProto=2，P2P 统一 action+data）
+auth/Register 协议（SubProto=2，P2P 统一 action+data）
 ==================================
 
 基本约定
 --------
-- 所有消息（请求/响应）统一格式：`{"action": "<name>", "data": {...}}`，状态码放在 data 内；响应 action = `<request_action>_resp`。登录/认证成功时响应附带 `role`（单值）与 `perms`（字符串数组）；未找到节点则返回空 `role/perms`。
-- 未登录设备 `SourceID=0`；仅子协议 2 在未登录状态放行，其余 `SourceID=0` 帧直接丢弃。
+- 所有消息（请求/响应）统一格式：`{"action": "<name>", "data": {...}}`，状态码放在 data 内；响应 action = `<request_action>_resp`。认证/认证成功时响应附带 `role`（单值）与 `perms`（字符串数组）；未找到节点则返回空 `role/perms`。
+- 未认证设备 `SourceID=0`；仅子协议 2 在未认证状态放行，其余 `SourceID=0` 帧直接丢弃。
 - 注册必须由直连 Hub 代发（携带 device_id）为 assist_register 上送权威。
 - 权威节点选择：配置指定权威 nodeID 优先；否则有父则默认父为权威（逐级可达祖先）；无父则本级处理。
 - 凭证只下发给设备和直连 Hub；父/祖先不缓存凭证。
@@ -27,7 +27,7 @@ Login/Register 协议（SubProto=2，P2P 统一 action+data）
 
 ### 请求 / data 字段
 - `register` / `assist_register`: `{ "device_id": "..." }`
-- `login` / `assist_login`: `{ "device_id": "...", "credential": "..." }`
+- `auth` / `assist_auth`: `{ "device_id": "...", "credential": "..." }`
 - `revoke`: `{ "device_id": "...", "node_id": N, "credential": "..." }`
 - `assist_query_credential`（可选）: `{ "device_id": "...", "node_id": N }`
 - `offline` / `assist_offline`: `{ "device_id": "...", "node_id": N, "reason": "optional" }`
@@ -37,7 +37,7 @@ Login/Register 协议（SubProto=2，P2P 统一 action+data）
 
 ### 响应 / data 字段（action = `<req>_resp`）
 - `register_resp` / `assist_register_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "...", "role": "...", "perms": ["..."] }`
-- `login_resp` / `assist_login_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "...", "role": "...", "perms": ["..."] }`
+- `auth_resp` / `assist_auth_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "...", "role": "...", "perms": ["..."] }`
 - `revoke_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N }`
 - `assist_query_credential_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "..." }`
 - `get_perms_resp`（新）: `{ "code": 1|err, "msg": "...", "node_id": N, "role": "...", "perms": ["..."] }`
@@ -47,9 +47,9 @@ Login/Register 协议（SubProto=2，P2P 统一 action+data）
 流程
 ----
 1) 注册：设备→直连 Hub 发 `register`；直连 Hub 依据权威规则上送 `assist_register`。权威分配 node_id、生成 credential，回 `assist_register_resp`。直连 Hub 保存白名单，回设备 `register_resp`，更新索引。
-2) 登录：设备提交 device_id+credential；直连 Hub 本地白名单验证通过才回 `login_resp`。若本地无凭证，可向上发 `assist_query_credential`（若实现）获取并缓存后完成登录。
+2) 认证：设备提交 device_id+credential；直连 Hub 本地白名单验证通过才回 `auth_resp`。若本地无凭证，可向上发 `assist_query_credential`（若实现）获取并缓存后完成认证。
 3) 撤销：管理/权威发 `revoke`（含 device_id，建议带 node_id/credential）。广播传播；直连 Hub 找到并删除时回 `revoke_resp`（code=1），未找到静默；凭证不匹配可回 4402。可选断开连接。
-4) 离线登录：直连 Hub 缓存白名单后，在失去父节点时仍可登录；注册仍需按权威规则上送。
+4) 离线认证：直连 Hub 缓存白名单后，在失去父节点时仍可认证；注册仍需按权威规则上送。
 5) 设备离线：设备或直连 Hub 发送 `offline`，直连 Hub 删除本地 node/device 索引，向父发送 `assist_offline` 逐级移除；成功移除时回 `offline_resp`/`assist_offline_resp`。
 
 发送与过滤
@@ -67,7 +67,7 @@ Login/Register 协议（SubProto=2，P2P 统一 action+data）
 错误码建议（data.code/msg）
 --------------------------
 - 1：成功
-- 登录/注册失败：4001 未注册/凭证不匹配；4002 无法访问权威/协助失败；4500 内部错误。
+- 认证/注册失败：4001 未注册/凭证不匹配；4002 无法访问权威/协助失败；4500 内部错误。
 - 撤销失败：4401 未找到白名单；4402 凭证不匹配/已更新；4500 内部错误。
 - 下线失败：4701 未找到索引；4700 内部错误。
 - 权限相关：4404 未找到节点/权限；权限不足建议返回 403。
@@ -89,13 +89,13 @@ Login/Register 协议（SubProto=2，P2P 统一 action+data）
 ```json
 {"action":"register_resp","data":{"code":1,"msg":"ok","node_id":5,"device_id":"mac-001122334455","credential":"base64url_random_token"}}
 ```
-登录请求  
+认证请求  
 ```json
-{"action":"login","data":{"device_id":"mac-001122334455","credential":"base64url_random_token"}}
+{"action":"auth","data":{"device_id":"mac-001122334455","credential":"base64url_random_token"}}
 ```
-登录失败响应  
+认证失败响应  
 ```json
-{"action":"login_resp","data":{"code":4001,"msg":"invalid credential"}}
+{"action":"auth_resp","data":{"code":4001,"msg":"invalid credential"}}
 ```
 撤销请求（广播）  
 ```json
