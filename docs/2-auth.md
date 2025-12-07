@@ -36,8 +36,8 @@ auth/Register 协议（SubProto=2，P2P 统一 action+data）
 - `perms_invalidate`（新）: `{ "node_ids": [N1, N2], "reason": "optional", "refresh": false }` 权限失效通知（node_ids 为空表示全量；`refresh=true` 表示可主动上行刷新）
 
 ### 响应 / data 字段（action = `<req>_resp`）
-- `register_resp` / `assist_register_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "...", "role": "...", "perms": ["..."] }`
-- `auth_resp` / `assist_auth_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "...", "role": "...", "perms": ["..."] }`
+- `register_resp` / `assist_register_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "hub_id": <local_hub>, "credential": "...", "role": "...", "perms": ["..."] }`
+- `auth_resp` / `assist_auth_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "hub_id": <local_hub>, "credential": "...", "role": "...", "perms": ["..."] }`
 - `revoke_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N }`
 - `assist_query_credential_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "..." }`
 - `get_perms_resp`（新）: `{ "code": 1|err, "msg": "...", "node_id": N, "role": "...", "perms": ["..."] }`
@@ -55,7 +55,7 @@ auth/Register 协议（SubProto=2，P2P 统一 action+data）
 发送与过滤
 ----------
 - `SourceID=0` 仅当 SubProto=2 放行；其他直接丢弃。
-- 响应 `TargetID=0` 由最近 Hub 投递设备。
+- 路由规则：核心层将 `TargetID=0` 视为“广播给所有子节点（不回父）”；不要将 0 作为“上送父节点”。需要上送父/权威时，应显式填写父节点的 NodeID；需要对所有子节点下发（如 revoke 广播、perms_invalidate）可使用 `TargetID=0`。
 - 凭证仅本地验证；父链主要路由 assist*/revoke/offline/query。
 - 权威选择：配置优先；否则默认父；无父则本级。
 
@@ -87,7 +87,7 @@ auth/Register 协议（SubProto=2，P2P 统一 action+data）
 ```
 注册成功响应  
 ```json
-{"action":"register_resp","data":{"code":1,"msg":"ok","node_id":5,"device_id":"mac-001122334455","credential":"base64url_random_token"}}
+{"action":"register_resp","data":{"code":1,"msg":"ok","node_id":5,"hub_id":2,"device_id":"mac-001122334455","credential":"base64url_random_token"}}
 ```
 认证请求  
 ```json

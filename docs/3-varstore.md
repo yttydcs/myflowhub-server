@@ -41,7 +41,7 @@ VarStore 协议（SubProto=3：set/get/notify）
 报文/头部建议
 -------------
 - `get_resp`、`notify_update` 建议用 `MajorCmd`，确保逐跳解包/缓存；`set_resp` 不强制 Cmd（可用 OKResp）。
-- 转发时保留原始 `SourceID`，仅调整 `TargetID`（父或 0）与 `Major/SubProto`。
+- 转发时保留原始 `SourceID`，仅调整 `TargetID` 与 `Major/SubProto`。注意：`TargetID=0` 在核心路由中表示“广播给所有子节点，不向父节点上行”，不要把 0 作为“上送父节点”。如需上行，请显式填写父/目标 Hub 的 NodeID。
 
 示例帧 payload
 --------------

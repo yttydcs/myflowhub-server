@@ -12,7 +12,7 @@
 4) **PreRouting 核心规则（现实现）**：
    - SourceID=0 且 SubProto!=2：丢弃（未登录非登录协议）。
    - SubProto=2：直接放行 dispatcher。
-   - target==0：广播给子节点（不回父），返回 false。
+   - target==0：广播给子节点（不回父），返回 false。不要将 0 作为“上送父节点”。
    - target!=local：按节点索引/父链转发，返回 false（子协议 handler 不会执行）。
    - target==local：返回 true，交给 Dispatcher 调用子协议。
 

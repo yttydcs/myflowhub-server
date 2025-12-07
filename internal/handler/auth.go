@@ -77,6 +77,7 @@ type respData struct {
 	Msg        string   `json:"msg,omitempty"`
 	DeviceID   string   `json:"device_id,omitempty"`
 	NodeID     uint32   `json:"node_id,omitempty"`
+	HubID      uint32   `json:"hub_id,omitempty"`
 	Credential string   `json:"credential,omitempty"`
 	Role       string   `json:"role,omitempty"`
 	Perms      []string `json:"perms,omitempty"`
@@ -255,11 +256,13 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	nodeID := h.ensureNodeID(req.DeviceID)
 	cred := h.ensureCredential(req.DeviceID)
 	h.saveBinding(ctx, conn, req.DeviceID, nodeID, cred)
+	h.applyHubID(ctx, conn, localNodeID(ctx))
 	h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{
 		Code:       1,
 		Msg:        "ok",
 		DeviceID:   req.DeviceID,
 		NodeID:     nodeID,
+		HubID:      localNodeID(ctx),
 		Credential: cred,
 		Role:       h.resolveRole(nodeID),
 		Perms:      h.resolvePerms(nodeID),
@@ -285,6 +288,10 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 	if c, found := srv.ConnManager().Get(connID); found {
 		h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
 		h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
+		h.applyHubID(ctx, c, resp.HubID)
+		if resp.HubID == 0 {
+			resp.HubID = srv.NodeID()
+		}
 		h.sendResp(ctx, c, nil, actionRegisterResp, resp)
 	}
 }
@@ -307,6 +314,7 @@ func (h *LoginHandler) handleLogin(ctx context.Context, conn core.IConnection, h
 			Msg:        "ok",
 			DeviceID:   req.DeviceID,
 			NodeID:     rec.NodeID,
+			HubID:      localNodeID(ctx),
 			Credential: rec.Credential,
 		})
 		return
@@ -315,7 +323,8 @@ func (h *LoginHandler) handleLogin(ctx context.Context, conn core.IConnection, h
 	if rec, ok := h.lookup(req.DeviceID); ok {
 		if rec.Credential == req.Credential {
 			h.saveBinding(ctx, conn, req.DeviceID, rec.NodeID, rec.Credential)
-			h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, Credential: rec.Credential})
+			h.applyHubID(ctx, conn, localNodeID(ctx))
+			h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, HubID: localNodeID(ctx), Credential: rec.Credential})
 			return
 		}
 		h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid credential"})
@@ -351,6 +360,10 @@ func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage
 		if resp.Code == 1 {
 			h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
 			h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
+			h.applyHubID(ctx, c, resp.HubID)
+		}
+		if resp.HubID == 0 {
+			resp.HubID = srv.NodeID()
 		}
 		h.sendResp(ctx, c, nil, actionLoginResp, resp)
 	}
@@ -457,6 +470,18 @@ func (h *LoginHandler) saveBinding(ctx context.Context, conn core.IConnection, d
 				updater.UpdateDeviceIndex(deviceID, conn)
 			}
 		}
+	}
+}
+
+func (h *LoginHandler) applyHubID(ctx context.Context, conn core.IConnection, hubID uint32) {
+	if conn == nil {
+		return
+	}
+	if hubID == 0 {
+		hubID = localNodeID(ctx)
+	}
+	if hubID != 0 {
+		conn.SetMeta("hubID", hubID)
 	}
 }
 
@@ -569,6 +594,12 @@ func (h *LoginHandler) sendResp(ctx context.Context, conn core.IConnection, reqH
 	payload, _ := json.Marshal(msg)
 	hdr := h.buildHeader(ctx, reqHdr)
 	if srv := core.ServerFromContext(ctx); srv != nil {
+		if data.HubID == 0 {
+			data.HubID = srv.NodeID()
+			raw, _ = json.Marshal(data)
+			msg.Data = raw
+			payload, _ = json.Marshal(msg)
+		}
 		if conn != nil {
 			if err := srv.Send(ctx, conn.ID(), hdr, payload); err != nil {
 				h.log.Warn("send resp failed", "err", err)
@@ -616,6 +647,13 @@ func (h *LoginHandler) forward(ctx context.Context, targetConn core.IConnection,
 	}
 	codec := header.HeaderTcpCodec{}
 	_ = targetConn.SendWithHeader(hdr, payload, codec)
+}
+
+func localNodeID(ctx context.Context) uint32 {
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		return srv.NodeID()
+	}
+	return 0
 }
 
 func (h *LoginHandler) selectAuthority(ctx context.Context) core.IConnection {
