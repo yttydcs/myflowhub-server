@@ -36,11 +36,13 @@ type setReq struct {
 	Value      string `json:"value"`
 	Visibility string `json:"visibility"`
 	Type       string `json:"type,omitempty"`
+	Owner      uint32 `json:"owner,omitempty"`
 	Notified   bool   `json:"notified,omitempty"` // 标记是否已向下通知 owner
 }
 
 type getReq struct {
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Owner uint32 `json:"owner,omitempty"`
 }
 
 type varResp struct {
@@ -69,10 +71,15 @@ type VarStoreHandler struct {
 
 	mu      sync.RWMutex
 	records map[string]varRecord       // key: ownerID:name
-	pending map[string][]string        // name -> waiting connIDs for get responses
+	pending map[pendingKey][]string    // (owner,name) -> waiting connIDs for get responses
 	cache   map[string]map[uint32]bool // name -> owners known
 
 	permCfg *permission.Config
+}
+
+type pendingKey struct {
+	owner uint32
+	name  string
 }
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
@@ -86,7 +93,7 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 	h := &VarStoreHandler{
 		log:     log,
 		records: make(map[string]varRecord),
-		pending: make(map[string][]string),
+		pending: make(map[pendingKey][]string),
 		cache:   make(map[string]map[uint32]bool),
 	}
 	if cfg != nil {
@@ -136,11 +143,17 @@ func (h *VarStoreHandler) handleSet(ctx context.Context, conn core.IConnection, 
 		return
 	}
 	source := hdr.SourceID()
+	owner := firstNonZero(req.Owner, source)
+	if owner == 0 {
+		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 400, Msg: "owner required"})
+		return
+	}
+	req.Owner = owner
 	actorID := permission.SourceNodeID(hdr, conn)
-	existingRec, existingOwner, found := h.lookupAny(req.Name)
+	existingRec, found := h.lookupOwned(owner, req.Name)
 
 	// creation rule: only owner (SourceID) can create when not found
-	if !found && source == 0 {
+	if !found && owner != source {
 		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 403, Msg: "owner required"})
 		return
 	}
@@ -149,13 +162,11 @@ func (h *VarStoreHandler) handleSet(ctx context.Context, conn core.IConnection, 
 		return
 	}
 
-	var owner uint32
 	var rec varRecord
 	if found {
-		owner = existingOwner
 		rec = existingRec
 		// permission: private only owner can update
-		if !rec.IsPublic && owner != source {
+		if !rec.IsPublic && owner != source && !h.hasPermission(actorID, permission.VarPrivateSet) {
 			h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 403, Msg: "forbidden"})
 			return
 		}
@@ -168,7 +179,6 @@ func (h *VarStoreHandler) handleSet(ctx context.Context, conn core.IConnection, 
 			rec.Visibility = req.Visibility
 		}
 	} else {
-		owner = source
 		rec = varRecord{
 			Value:      req.Value,
 			Owner:      owner,
@@ -209,14 +219,21 @@ func (h *VarStoreHandler) handleGet(ctx context.Context, conn core.IConnection, 
 		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 400, Msg: "invalid get"})
 		return
 	}
-	if rec, owner, ok := h.lookupAny(req.Name); ok {
-		if rec.IsPublic || owner == hdr.SourceID() {
+	targetOwner := firstNonZero(req.Owner, hdr.SourceID())
+	if targetOwner == 0 {
+		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 400, Msg: "owner required"})
+		return
+	}
+	req.Owner = targetOwner
+	actorID := permission.SourceNodeID(hdr, conn)
+	if rec, ok := h.lookupOwned(targetOwner, req.Name); ok {
+		if rec.IsPublic || targetOwner == hdr.SourceID() || h.hasPermission(actorID, permission.VarPrivateSet) {
 			h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{
 				Code:       1,
 				Msg:        "ok",
 				Name:       req.Name,
 				Value:      rec.Value,
-				Owner:      owner,
+				Owner:      targetOwner,
 				Visibility: visString(rec),
 				Type:       rec.Type,
 			})
@@ -227,7 +244,7 @@ func (h *VarStoreHandler) handleGet(ctx context.Context, conn core.IConnection, 
 	}
 	if shouldForwardUp(ctx, hdr) {
 		if parent := h.findParent(ctx); parent != nil {
-			h.addPending(req.Name, conn.ID())
+			h.addPending(targetOwner, req.Name, conn.ID())
 			h.forward(ctx, parent, actionVarAssistGet, req, hdr.SourceID())
 			return
 		}
@@ -247,7 +264,7 @@ func (h *VarStoreHandler) handleGetResp(ctx context.Context, data json.RawMessag
 	if resp.Name == "" {
 		return
 	}
-	connIDs := h.popPending(resp.Name)
+	connIDs := h.popPending(resp.Owner, resp.Name)
 	srv := core.ServerFromContext(ctx)
 	for _, id := range connIDs {
 		if srv == nil {
@@ -294,6 +311,7 @@ func (h *VarStoreHandler) handleNotifyUpdate(data json.RawMessage) {
 
 // helpers
 func (h *VarStoreHandler) lookupAny(name string) (varRecord, uint32, bool) {
+	// legacy fallback: remains for compatibility where owner 未指定。
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if owners, ok := h.cache[name]; ok {
@@ -313,6 +331,16 @@ func (h *VarStoreHandler) lookupAny(name string) (varRecord, uint32, bool) {
 	return varRecord{}, 0, false
 }
 
+func (h *VarStoreHandler) lookupOwned(owner uint32, name string) (varRecord, bool) {
+	if owner == 0 || name == "" {
+		return varRecord{}, false
+	}
+	h.mu.RLock()
+	rec, ok := h.records[h.key(owner, name)]
+	h.mu.RUnlock()
+	return rec, ok
+}
+
 func (h *VarStoreHandler) addOwnerCache(name string, owner uint32) {
 	if owner == 0 || name == "" {
 		return
@@ -327,17 +355,19 @@ func (h *VarStoreHandler) key(owner uint32, name string) string {
 	return strconv.FormatUint(uint64(owner), 10) + ":" + name
 }
 
-func (h *VarStoreHandler) addPending(name, connID string) {
+func (h *VarStoreHandler) addPending(owner uint32, name, connID string) {
 	h.mu.Lock()
-	h.pending[name] = append(h.pending[name], connID)
+	k := pendingKey{owner: owner, name: name}
+	h.pending[k] = append(h.pending[k], connID)
 	h.mu.Unlock()
 }
 
-func (h *VarStoreHandler) popPending(name string) []string {
+func (h *VarStoreHandler) popPending(owner uint32, name string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	conns := h.pending[name]
-	delete(h.pending, name)
+	k := pendingKey{owner: owner, name: name}
+	conns := h.pending[k]
+	delete(h.pending, k)
 	return conns
 }
 
@@ -533,4 +563,11 @@ func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
 		return false
 	}
 	return h.permCfg.Has(nodeID, perm)
+}
+
+func firstNonZero(a, b uint32) uint32 {
+	if a != 0 {
+		return a
+	}
+	return b
 }
