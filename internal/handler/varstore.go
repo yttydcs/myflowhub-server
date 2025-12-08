@@ -21,6 +21,10 @@ const (
 	actionVarGetResp       = "get_resp"
 	actionVarAssistGet     = "assist_get"
 	actionVarAssistGetResp = "assist_get_resp"
+	actionVarList          = "list"
+	actionVarListResp      = "list_resp"
+	actionVarAssistList    = "assist_list"
+	actionVarAssistListResp = "assist_list_resp"
 	actionVarNotifyUpdate  = "notify_update"
 	visibilityPublic       = "public"
 	visibilityPrivate      = "private"
@@ -45,6 +49,10 @@ type getReq struct {
 	Owner uint32 `json:"owner,omitempty"`
 }
 
+type listReq struct {
+	Owner uint32 `json:"owner,omitempty"`
+}
+
 type varResp struct {
 	Code       int    `json:"code"`
 	Msg        string `json:"msg,omitempty"`
@@ -53,6 +61,7 @@ type varResp struct {
 	Owner      uint32 `json:"owner,omitempty"`
 	Visibility string `json:"visibility,omitempty"`
 	Type       string `json:"type,omitempty"`
+	Names      []string `json:"names,omitempty"`
 }
 
 type varRecord struct {
@@ -71,7 +80,7 @@ type VarStoreHandler struct {
 
 	mu      sync.RWMutex
 	records map[string]varRecord       // key: ownerID:name
-	pending map[pendingKey][]string    // (owner,name) -> waiting connIDs for get responses
+	pending map[pendingKey][]string    // (owner,name,kind) -> waiting connIDs for responses
 	cache   map[string]map[uint32]bool // name -> owners known
 
 	permCfg *permission.Config
@@ -80,7 +89,13 @@ type VarStoreHandler struct {
 type pendingKey struct {
 	owner uint32
 	name  string
+	kind  string
 }
+
+const (
+	pendingKindGet  = "get"
+	pendingKindList = "list"
+)
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
 	return NewVarStoreHandlerWithConfig(nil, log)
@@ -128,6 +143,12 @@ func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, 
 		h.handleGet(ctx, conn, hdr, msg.Data, true)
 	case actionVarAssistGetResp:
 		h.handleGetResp(ctx, msg.Data)
+	case actionVarList:
+		h.handleList(ctx, conn, hdr, msg.Data, false)
+	case actionVarAssistList:
+		h.handleList(ctx, conn, hdr, msg.Data, true)
+	case actionVarAssistListResp:
+		h.handleListResp(ctx, msg.Data)
 	case actionVarNotifyUpdate:
 		h.handleNotifyUpdate(msg.Data)
 	default:
@@ -244,7 +265,7 @@ func (h *VarStoreHandler) handleGet(ctx context.Context, conn core.IConnection, 
 	}
 	if shouldForwardUp(ctx, hdr) {
 		if parent := h.findParent(ctx); parent != nil {
-			h.addPending(targetOwner, req.Name, conn.ID())
+			h.addPending(targetOwner, req.Name, conn.ID(), pendingKindGet)
 			h.forward(ctx, parent, actionVarAssistGet, req, hdr.SourceID())
 			return
 		}
@@ -253,6 +274,37 @@ func (h *VarStoreHandler) handleGet(ctx context.Context, conn core.IConnection, 
 	}
 	// 无法上行且未命中
 	h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 404, Msg: "not found"})
+}
+
+// list handler: return public variable names for an owner.
+func (h *VarStoreHandler) handleList(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
+	var req listReq
+	if err := json.Unmarshal(data, &req); err != nil {
+		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 400, Msg: "invalid list"})
+		return
+	}
+	targetOwner := firstNonZero(req.Owner, hdr.SourceID())
+	if targetOwner == 0 {
+		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 400, Msg: "owner required"})
+		return
+	}
+	req.Owner = targetOwner
+
+	names := h.listPublicNames(targetOwner)
+	if len(names) > 0 {
+		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 1, Msg: "ok", Owner: targetOwner, Names: names})
+		return
+	}
+	if shouldForwardUp(ctx, hdr) {
+		if parent := h.findParent(ctx); parent != nil {
+			h.addPending(targetOwner, "", conn.ID(), pendingKindList)
+			h.forward(ctx, parent, actionVarAssistList, req, hdr.SourceID())
+			return
+		}
+		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 404, Msg: "not found", Owner: targetOwner})
+		return
+	}
+	h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 404, Msg: "not found", Owner: targetOwner})
 }
 
 // assist_get_resp fan-out
@@ -264,7 +316,7 @@ func (h *VarStoreHandler) handleGetResp(ctx context.Context, data json.RawMessag
 	if resp.Name == "" {
 		return
 	}
-	connIDs := h.popPending(resp.Owner, resp.Name)
+	connIDs := h.popPending(resp.Owner, resp.Name, pendingKindGet)
 	srv := core.ServerFromContext(ctx)
 	for _, id := range connIDs {
 		if srv == nil {
@@ -285,6 +337,35 @@ func (h *VarStoreHandler) handleGetResp(ctx context.Context, data json.RawMessag
 		}
 		h.addOwnerCache(resp.Name, resp.Owner)
 		h.mu.Unlock()
+	}
+}
+
+// assist_list_resp fan-out
+func (h *VarStoreHandler) handleListResp(ctx context.Context, data json.RawMessage) {
+	var resp varResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+	if resp.Owner == 0 {
+		return
+	}
+	connIDs := h.popPending(resp.Owner, "", pendingKindList)
+	srv := core.ServerFromContext(ctx)
+	for _, id := range connIDs {
+		if srv == nil {
+			continue
+		}
+		if c, ok := srv.ConnManager().Get(id); ok {
+			h.sendResp(ctx, c, nil, actionVarListResp, resp)
+		}
+	}
+	if resp.Code == 1 {
+		for _, name := range resp.Names {
+			if name == "" {
+				continue
+			}
+			h.addOwnerCache(name, resp.Owner)
+		}
 	}
 }
 
@@ -341,6 +422,27 @@ func (h *VarStoreHandler) lookupOwned(owner uint32, name string) (varRecord, boo
 	return rec, ok
 }
 
+func (h *VarStoreHandler) listPublicNames(owner uint32) []string {
+	if owner == 0 {
+		return nil
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var names []string
+	prefix := strconv.FormatUint(uint64(owner), 10) + ":"
+	for key, rec := range h.records {
+		if !rec.IsPublic {
+			continue
+		}
+		if strings.HasPrefix(key, prefix) {
+			if parts := strings.SplitN(key, ":", 2); len(parts) == 2 && parts[1] != "" {
+				names = append(names, parts[1])
+			}
+		}
+	}
+	return names
+}
+
 func (h *VarStoreHandler) addOwnerCache(name string, owner uint32) {
 	if owner == 0 || name == "" {
 		return
@@ -355,17 +457,17 @@ func (h *VarStoreHandler) key(owner uint32, name string) string {
 	return strconv.FormatUint(uint64(owner), 10) + ":" + name
 }
 
-func (h *VarStoreHandler) addPending(owner uint32, name, connID string) {
+func (h *VarStoreHandler) addPending(owner uint32, name, connID string, kind string) {
 	h.mu.Lock()
-	k := pendingKey{owner: owner, name: name}
+	k := pendingKey{owner: owner, name: name, kind: kind}
 	h.pending[k] = append(h.pending[k], connID)
 	h.mu.Unlock()
 }
 
-func (h *VarStoreHandler) popPending(owner uint32, name string) []string {
+func (h *VarStoreHandler) popPending(owner uint32, name string, kind string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	k := pendingKey{owner: owner, name: name}
+	k := pendingKey{owner: owner, name: name, kind: kind}
 	conns := h.pending[k]
 	delete(h.pending, k)
 	return conns
