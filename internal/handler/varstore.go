@@ -366,13 +366,18 @@ func (h *VarStoreHandler) buildHeader(ctx context.Context, reqHdr core.IHeader, 
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		src = srv.NodeID()
 	}
+	// 默认将响应返回给原请求的 SourceID，避免 TargetID 停留在本地节点。
+	respTarget := base.TargetID()
+	if reqHdr != nil && reqHdr.SourceID() != 0 {
+		respTarget = reqHdr.SourceID()
+	}
 	major := base.Major()
 	if action == actionVarGetResp || action == actionVarAssistGetResp || action == actionVarNotifyUpdate {
 		major = header.MajorCmd
 	} else {
 		major = header.MajorOKResp
 	}
-	return base.WithMajor(major).WithSubProto(3).WithSourceID(src).WithTargetID(base.TargetID())
+	return base.WithMajor(major).WithSubProto(3).WithSourceID(src).WithTargetID(respTarget)
 }
 
 func (h *VarStoreHandler) forward(ctx context.Context, target core.IConnection, action string, data any, srcID uint32) {
