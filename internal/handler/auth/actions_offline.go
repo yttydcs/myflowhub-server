@@ -34,8 +34,8 @@ func (a *offlineAction) Handle(ctx context.Context, conn core.IConnection, _ cor
 	}
 }
 
-func registerOfflineActions(h *LoginHandler) []SubProcessAction {
-	return []SubProcessAction{
+func registerOfflineActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{
 		&offlineAction{h: h, assisted: false},
 		&offlineAction{h: h, assisted: true},
 	}

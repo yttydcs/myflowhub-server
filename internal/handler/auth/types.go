@@ -1,11 +1,6 @@
 package auth
 
-import (
-	"context"
-	"encoding/json"
-
-	core "github.com/yttydcs/myflowhub-core"
-)
+import "encoding/json"
 
 // 动作常量定义
 const (
@@ -34,13 +29,6 @@ const (
 type message struct {
 	Action string          `json:"action"`
 	Data   json.RawMessage `json:"data"`
-}
-
-// SubProcessAction 抽象子协议内单个动作。
-type SubProcessAction interface {
-	Name() string
-	RequireAuth() bool
-	Handle(context.Context, core.IConnection, core.IHeader, json.RawMessage)
 }
 
 type registerData struct {

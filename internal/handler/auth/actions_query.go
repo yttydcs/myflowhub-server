@@ -56,8 +56,8 @@ func (a *assistQueryRespAction) Handle(ctx context.Context, _ core.IConnection, 
 	}
 }
 
-func registerAssistQueryActions(h *LoginHandler) []SubProcessAction {
-	return []SubProcessAction{
+func registerAssistQueryActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{
 		&assistQueryAction{h: h},
 		&assistQueryRespAction{h: h},
 	}

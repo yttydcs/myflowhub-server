@@ -26,7 +26,7 @@ type LoginHandler struct {
 
 	permCfg *permission.Config
 
-	actions map[string]SubProcessAction
+	actions map[string]core.SubProcessAction
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -73,7 +73,7 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 }
 
 func (h *LoginHandler) initActions() {
-	h.actions = make(map[string]SubProcessAction)
+	h.actions = make(map[string]core.SubProcessAction)
 	for _, act := range registerRegisterActions(h) {
 		h.registerAction(act)
 	}
@@ -94,7 +94,7 @@ func (h *LoginHandler) initActions() {
 	}
 }
 
-func (h *LoginHandler) registerAction(a SubProcessAction) {
+func (h *LoginHandler) registerAction(a core.SubProcessAction) {
 	if a == nil || a.Name() == "" {
 		return
 	}

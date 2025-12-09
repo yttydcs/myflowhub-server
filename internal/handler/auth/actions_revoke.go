@@ -16,8 +16,8 @@ func (a *revokeAction) Handle(ctx context.Context, conn core.IConnection, hdr co
 	a.h.handleRevoke(ctx, conn, hdr, data)
 }
 
-func registerRevokeActions(h *LoginHandler) []SubProcessAction {
-	return []SubProcessAction{&revokeAction{h: h}}
+func registerRevokeActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{&revokeAction{h: h}}
 }
 
 // revoke handling: broadcast; respond only if deleted or credential mismatch

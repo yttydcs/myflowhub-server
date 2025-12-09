@@ -129,8 +129,8 @@ func (a *permsSnapshotAction) Handle(ctx context.Context, conn core.IConnection,
 	a.h.broadcastPermsSnapshot(ctx, conn, data)
 }
 
-func registerPermActions(h *LoginHandler) []SubProcessAction {
-	return []SubProcessAction{
+func registerPermActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{
 		&getPermsAction{h: h},
 		&listRolesAction{h: h},
 		&permsInvalidateAction{h: h},

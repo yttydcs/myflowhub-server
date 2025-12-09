@@ -54,8 +54,8 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 	}
 }
 
-func registerRegisterActions(h *LoginHandler) []SubProcessAction {
-	return []SubProcessAction{
+func registerRegisterActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{
 		&registerAction{h: h, assisted: false},
 		&registerAction{h: h, assisted: true},
 		&registerRespAction{h: h},
