@@ -1,77 +1,76 @@
-VarStore 协议（SubProto=3：set/get/notify）
-==========================================
+VarStore 协议（SubProto=3）新规范
+=================================
 
-变量模型
+总览
+----
+- 面向“节点变量”缓存与查询，键 = `owner_node_id:name`。
+- 角色：**请求方**（发起 set/get/list/revoke）、**owner**（变量所属节点）、**祖先链**（请求所在节点→父→…→根）。
+- 目标：所有读写/撤销均沿祖先链逐跳上送命中，逐跳回传；不再向所有子节点广播，避免性能开销。
+
+数据模型
 --------
-- 键 = `owner_node_id:name`，name 大小写敏感，字符集仅字母/数字/下划线。
-- 可见性：`public` 公开可读（可被他人更新且会通知 owner）；`private` 仅 owner 可读/改。
-- type：随 `set` 携带，空则默认 `"string"`。
+- name：大小写敏感，仅字母/数字/下划线。
+- owner：uint32，默认为请求方 SourceID。
+- visibility：`public`（他人可读/改）或 `private`（仅 owner 可读/改）。
+- type：字符串标签，空默认为 `"string"`。
 
-动作（JSON：`{"action": "...", "data": {...}}`）
---------------------------------------------
-- `set` / `assist_set`：创建/更新（Upsert）。只有当 `owner==SourceID` 时才允许新建；已有变量时按可见性规则更新。
-  ```json
-  { "name": "temp_1", "value": "22.5", "visibility": "public", "type": "string" }
-  ```
-  resp (`set_resp`):
-  ```json
-  { "code": 1, "msg": "ok", "name": "temp_1", "owner": 5, "visibility": "public", "type": "string" }
-  ```
-- `get` / `assist_get`：读取。
-  ```json
-  { "name": "temp_1" }
-  ```
-  resp (`get_resp` / `assist_get_resp`):
-  ```json
-  { "code": 1, "msg": "ok", "name": "temp_1", "value": "22.5", "owner": 5, "visibility": "public", "type": "string" }
-  ```
-  失败示例：`{ "code": 404, "msg": "not found" }`，`{ "code": 403, "msg": "forbidden" }`
-- `notify_update`：他人修改时通知所有者，data 同 `get_resp`（含 name/value/owner/type）。
+动作与载荷（JSON：`{"action": "...", "data": {...}}`）
+-----------------------------
+- 请求方 -> 直接父节点：`set/get/list/revoke`（原始指令）。
+- 父节点向上协助：`assist_set/assist_get/assist_list/assist_revoke`。
+- 仅 set、revoke 有 `_up`（祖先链缓存同步）：`up_set/up_revoke`。
+- 响应：`set_resp/get_resp/list_resp/revoke_resp`（以及 assist_*_resp）。  
+- 通知 owner：`notify_set`、`notify_revoke`（Cmd 帧，途经链路尽量缓存）。
+- 示例：
+  - set：`{"name":"temp","value":"22.5","visibility":"public","type":"string","owner":5}` → `{"code":1,"name":"temp","owner":5,"visibility":"public","type":"string"}`
+  - get：`{"name":"temp","owner":5}` → `{"code":1,"name":"temp","value":"22.5","owner":5,"visibility":"public","type":"string"}`
+  - list：`{"owner":5}` → `{"code":1,"owner":5,"names":["a","b"]}`
+  - revoke：`{"name":"temp","owner":5}` → `{"code":1,"name":"temp","owner":5}`
+  - notify_set/revoke：携带 name/owner/可选 value/type/visibility（更新时才携带），沿链路缓存。
 
-处理规则
---------
-- 新建：仅当 `owner == SourceID` 且未缓存该键时允许创建。
-- 自己 set（SourceID=owner）：本地写缓存后向父发 `assist_set`，父再向上逐级缓存。
-- 他人 set（SourceID≠owner）：
-  - 每级父节点检查是否有子孙是 owner；有则向子孙发 `notify_update`（逐跳下行刷新/告知），之后沿父链继续发 `assist_set` 以缓存。
-  - `set` 与 `assist_set` 的区别仅在于是否已下行通知 owner（可用 `notified` 标记）。
-- get：本地命中且可访问（公开或 owner==请求方）直接返回；未命中向父发 `assist_get`，收到 `assist_get_resp` 后缓存并回复；最顶层未命中返回 404。上行保留原始 `SourceID`，响应 `TargetID` 指向原始请求方。
-- 类型：`set` 可带 type；为空则保留原类型或默认 `"string"`；`get/resp` 返回当前类型。
+路由与头部
+----------
+- Major：命令/状态类建议用 `MajorCmd`；响应可用 `MajorOKResp` 或 `MajorCmd`，需逐跳可见的用 `MajorCmd`。
+- SubProto 固定为 3。转发时保留原始 `SourceID`，根据场景调整 `TargetID`。
+- `TargetID=0` 在核心中意味着“广播子节点，不上行父链”，不要用 0 表示“上送父节点”。上送请显式填父节点/目标 Hub 的 NodeID。
 
-报文/头部建议
--------------
-- `get_resp`、`notify_update` 建议用 `MajorCmd`，确保逐跳解包/缓存；`set_resp` 不强制 Cmd（可用 OKResp）。
-- 转发时保留原始 `SourceID`，仅调整 `TargetID` 与 `Major/SubProto`。注意：`TargetID=0` 在核心路由中表示“广播给所有子节点，不向父节点上行”，不要把 0 作为“上送父节点”。如需上行，请显式填写父/目标 Hub 的 NodeID。
-
-示例帧 payload
+处理与链路规则
 --------------
-- set：
-```
-{"action":"set","data":{"name":"sensor_a","value":"22.5","visibility":"public","type":"string"}}
-```
-- set_resp：
-```
-{"action":"set_resp","data":{"code":1,"msg":"ok","name":"sensor_a","owner":5,"visibility":"public","type":"string"}}
-```
-- get：
-```
-{"action":"get","data":{"name":"sensor_a"}}
-```
-- get_resp 命中：
-```
-{"action":"get_resp","data":{"code":1,"msg":"ok","name":"sensor_a","value":"22.5","owner":5,"visibility":"public","type":"string"}}
-```
-- 未命中：
-```
-{"action":"get_resp","data":{"code":404,"msg":"not found"}}
-```
+- 判定子树：用路由表/连接索引 + localID 判断 owner 是否在当前子树（包含自己）。
+- 权限：关键执行节点（通常是请求方与 owner 的最近公共祖先，或更上层拥有完整信息的节点）做 `var.private_set` / `var.revoke` 判定，不提前拒绝。
+- set/revoke（修改类）：
+  1) 请求方 -> 直接父：发送 `set`/`revoke`（Target=父）。
+  2) 父节点查子树是否含 owner。若否且有父：向上发 `assist_*`；若无父仍未找到，回 `*_resp` not found 给请求方。
+  3) 命中的关键节点：执行业务并缓存，向上发 `up_*` 让祖先缓存；向请求方发 `*_resp`（若 requester≠owner）；向 owner 发 `notify_set`/`notify_revoke`（requester=owner 则只通知一次）。`up_*`/`notify_*` 经途节点尽可能缓存。
+  4) 上层收到 `assist_*` 复用同逻辑；收到 `up_*` 先缓存，再继续向上转发（默认透传，可挂接校验/签名）。
+- get/list（查询类）：
+  1) 请求方 -> 父：发送 `get`/`list`。
+  2) 父若子树含 owner 且本地有缓存：直接回 `*_resp`（Target=requester）。若未缓存（即便在子树）或不在子树且有父：向上 `assist_*`；无父则回 not found。
+  3) 上层收到 `assist_*` 重复步骤 2。无 `_up`。
+- 缓存策略：请求方是否缓存自定；`up_*` 与 `notify_*` 路径上的节点尽量缓存；`*_resp` 不强制缓存。
 
-集成
-----
-- Dispatcher 注册：`dp.RegisterHandler(handler.NewVarStoreHandler(logger))`
-- SubProto=3，Major 可用 Msg/Cmd；handler 需在每跳解包后自行决定上行/下行。
+错误码约定
+----------
+- `1` 成功
+- `2` 参数非法
+- `3` 权限不足
+- `4` 未找到
 
-注意
-----
-- 当前仅内存缓存，重启即丢失；可按需接入持久化。
-- 公开变量允许他人更新并通知 owner，未来可按需收紧为更严格 ACL。***
+示例 payload
+------------
+- set：`{"action":"set","data":{"name":"sensor_a","value":"22.5","visibility":"public","type":"string"}}`
+- get：`{"action":"get","data":{"name":"sensor_a"}}`
+- list：`{"action":"list","data":{"owner":5}}`
+- revoke：`{"action":"revoke","data":{"name":"sensor_a"}}`
+- 成功 get_resp：`{"action":"get_resp","data":{"code":1,"name":"sensor_a","value":"22.5","owner":5,"visibility":"public","type":"string"}}`
+- 未命中：`{"action":"get_resp","data":{"code":404,"msg":"not found"}}`
+
+集成提示
+--------
+- Dispatcher 注册：`dp.RegisterHandler(handler.NewVarStoreHandler(logger))`。
+- handler 需在 `TargetID` 与 `shouldForwardUp` 逻辑上遵循“祖先链上送、逐跳回传”的规则，避免使用 0 表示上送。
+
+后续演进
+--------
+- 若需持久化，可在 `assist_set` 命中节点挂接存储。
+- 若需多活 owner/分区路由，可扩展 owner->Hub 映射，在预路由阶段直接路由到 owner 所在 Hub。***

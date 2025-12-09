@@ -64,10 +64,10 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	defer stopTestServer(t, hubSrv)
 	waitListen(t, hubAddr, 2*time.Second)
 
-	// set from hub connection
+	// set from hub connection（请求方直连父节点=hub）
 	setConn, err := net.Dial("tcp", hubAddr)
 	if err != nil {
-		t.Fatalf("dial hub: %v", err)
+		t.Fatalf("dial hub for set: %v", err)
 	}
 	defer setConn.Close()
 	setCodec := header.HeaderTcpCodec{}
@@ -84,7 +84,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 		WithMajor(header.MajorCmd).
 		WithSubProto(3).
 		WithSourceID(hubNodeID).
-		WithTargetID(0).
+		WithTargetID(hubNodeID).
 		WithPayloadLength(uint32(len(setPayload)))
 	frame, _ := setCodec.Encode(setHdr, setPayload)
 	if _, err := setConn.Write(frame); err != nil {

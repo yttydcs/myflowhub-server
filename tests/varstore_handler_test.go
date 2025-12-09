@@ -90,7 +90,7 @@ func TestVarStoreSetNewByOwner(t *testing.T) {
 	srv := newRecordServer(1, cm)
 	ctx := core.WithServerContext(context.Background(), srv)
 
-	req := setJSON("set", "temp", "v1", "public", "string")
+	req := setJSON("set", "temp", "v1", "public", "string", 0)
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(1).WithTargetID(0)
 	h.OnReceive(ctx, conn, hdr, req)
 
@@ -130,7 +130,7 @@ func TestVarStoreUpdateByOtherPublicNotify(t *testing.T) {
 	ctx := core.WithServerContext(context.Background(), srv)
 
 	// owner set first
-	req1 := setJSON("set", "temp", "v1", "public", "")
+	req1 := setJSON("set", "temp", "v1", "public", "", 0)
 	hdr1 := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(10).WithTargetID(0)
 	h.OnReceive(ctx, ownerConn, hdr1, req1)
 
@@ -138,11 +138,11 @@ func TestVarStoreUpdateByOtherPublicNotify(t *testing.T) {
 	otherConn := newRecordConn("other")
 	otherConn.SetMeta("nodeID", uint32(20))
 	_ = cm.Add(otherConn)
-	req2 := setJSON("set", "temp", "v2", "public", "")
+	req2 := setJSON("set", "temp", "v2", "public", "", 10)
 	hdr2 := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(20).WithTargetID(0)
 	h.OnReceive(ctx, otherConn, hdr2, req2)
 
-	// owner should receive notify_update
+	// owner should receive notify_set
 	notified := false
 	for _, f := range ownerConn.sent {
 		var msg struct {
@@ -150,7 +150,7 @@ func TestVarStoreUpdateByOtherPublicNotify(t *testing.T) {
 			Data   json.RawMessage `json:"data"`
 		}
 		_ = json.Unmarshal(f.payload, &msg)
-		if msg.Action == "notify_update" {
+		if msg.Action == "notify_set" {
 			notified = true
 			break
 		}
@@ -169,14 +169,14 @@ func TestVarStorePrivateUpdateForbidden(t *testing.T) {
 	srv := newRecordServer(1, cm)
 	ctx := core.WithServerContext(context.Background(), srv)
 
-	req1 := setJSON("set", "secret", "v1", "private", "")
+	req1 := setJSON("set", "secret", "v1", "private", "", 0)
 	hdr1 := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(10).WithTargetID(0)
 	h.OnReceive(ctx, ownerConn, hdr1, req1)
 
 	other := newRecordConn("other")
 	other.SetMeta("nodeID", uint32(20))
 	_ = cm.Add(other)
-	req2 := setJSON("set", "secret", "v2", "private", "")
+	req2 := setJSON("set", "secret", "v2", "private", "", 10)
 	hdr2 := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(20).WithTargetID(0)
 	h.OnReceive(ctx, other, hdr2, req2)
 
@@ -189,8 +189,8 @@ func TestVarStorePrivateUpdateForbidden(t *testing.T) {
 		Code int `json:"code"`
 	}
 	_ = json.Unmarshal(resp.Data, &data)
-	if data.Code != 403 {
-		t.Fatalf("expected 403, got %+v", data)
+	if data.Code != 3 {
+		t.Fatalf("expected 3, got %+v", data)
 	}
 }
 
@@ -212,12 +212,21 @@ func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
 	unauth := newRecordConn("unauth")
 	unauth.SetMeta("nodeID", uint32(20))
 	_ = cm.Add(unauth)
-	req := setJSON("set", "secret", "value", "private", "")
+	req := setJSON("set", "secret", "value", "private", "", 10)
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(3).
 		WithSourceID(20)
 	h.OnReceive(ctx, unauth, hdr, req)
+
+	// 未在子树，先向上 assist；模拟上游返回权限不足
+	respMsg := mustJSON(map[string]any{
+		"action": "assist_set_resp",
+		"data":   map[string]any{"code": 3, "name": "secret", "owner": 10},
+	})
+	respHdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(99).WithTargetID(1)
+	h.OnReceive(ctx, unauth, respHdr, respMsg)
+
 	if len(unauth.sent) == 0 {
 		t.Fatalf("expected resp for unauthorized writer")
 	}
@@ -233,8 +242,8 @@ func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
 		Code int `json:"code"`
 	}
 	_ = json.Unmarshal(msg.Data, &resp)
-	if resp.Code != 4403 {
-		t.Fatalf("expected 4403 for unauthorized, got %d", resp.Code)
+	if resp.Code != 3 {
+		t.Fatalf("expected 3 for unauthorized, got %d", resp.Code)
 	}
 
 	auth := newRecordConn("auth")
@@ -275,7 +284,7 @@ func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 	srv := newRecordServer(1, cm)
 	ctx := core.WithServerContext(context.Background(), srv)
 
-	req := getJSON("get", "temp")
+	req := getJSON("get", "temp", 5)
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(2).WithTargetID(0)
 	h.OnReceive(ctx, child, hdr, req)
 
@@ -306,7 +315,7 @@ func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 	}
 }
 
-func setJSON(action, name, value, vis, typ string) []byte {
+func setJSON(action, name, value, vis, typ string, owner uint32) []byte {
 	data := map[string]any{
 		"name":       name,
 		"value":      value,
@@ -315,6 +324,9 @@ func setJSON(action, name, value, vis, typ string) []byte {
 	if typ != "" {
 		data["type"] = typ
 	}
+	if owner != 0 {
+		data["owner"] = owner
+	}
 	raw, _ := json.Marshal(map[string]any{
 		"action": action,
 		"data":   data,
@@ -322,10 +334,14 @@ func setJSON(action, name, value, vis, typ string) []byte {
 	return raw
 }
 
-func getJSON(action, name string) []byte {
+func getJSON(action, name string, owner uint32) []byte {
+	data := map[string]any{"name": name}
+	if owner != 0 {
+		data["owner"] = owner
+	}
 	raw, _ := json.Marshal(map[string]any{
 		"action": action,
-		"data":   map[string]any{"name": name},
+		"data":   data,
 	})
 	return raw
 }

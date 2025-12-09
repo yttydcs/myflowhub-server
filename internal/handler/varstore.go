@@ -9,25 +9,38 @@ import (
 	"sync"
 
 	core "github.com/yttydcs/myflowhub-core"
+	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
 const (
-	actionVarSet           = "set"
-	actionVarSetResp       = "set_resp"
-	actionVarAssistSet     = "assist_set"
-	actionVarGet           = "get"
-	actionVarGetResp       = "get_resp"
-	actionVarAssistGet     = "assist_get"
-	actionVarAssistGetResp = "assist_get_resp"
-	actionVarList          = "list"
-	actionVarListResp      = "list_resp"
-	actionVarAssistList    = "assist_list"
-	actionVarAssistListResp = "assist_list_resp"
-	actionVarNotifyUpdate  = "notify_update"
-	visibilityPublic       = "public"
-	visibilityPrivate      = "private"
+	varActionSet           = "set"
+	varActionAssistSet     = "assist_set"
+	varActionSetResp       = "set_resp"
+	varActionAssistSetResp = "assist_set_resp"
+	varActionUpSet         = "up_set"
+	varActionNotifySet     = "notify_set"
+
+	varActionGet           = "get"
+	varActionAssistGet     = "assist_get"
+	varActionGetResp       = "get_resp"
+	varActionAssistGetResp = "assist_get_resp"
+
+	varActionList           = "list"
+	varActionAssistList     = "assist_list"
+	varActionListResp       = "list_resp"
+	varActionAssistListResp = "assist_list_resp"
+
+	varActionRevoke           = "revoke"
+	varActionAssistRevoke     = "assist_revoke"
+	varActionRevokeResp       = "revoke_resp"
+	varActionAssistRevokeResp = "assist_revoke_resp"
+	varActionUpRevoke         = "up_revoke"
+	varActionNotifyRevoke     = "notify_revoke"
+
+	visibilityPublic  = "public"
+	visibilityPrivate = "private"
 )
 
 type varMessage struct {
@@ -41,7 +54,6 @@ type setReq struct {
 	Visibility string `json:"visibility"`
 	Type       string `json:"type,omitempty"`
 	Owner      uint32 `json:"owner,omitempty"`
-	Notified   bool   `json:"notified,omitempty"` // 标记是否已向下通知 owner
 }
 
 type getReq struct {
@@ -54,13 +66,13 @@ type listReq struct {
 }
 
 type varResp struct {
-	Code       int    `json:"code"`
-	Msg        string `json:"msg,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Value      string `json:"value,omitempty"`
-	Owner      uint32 `json:"owner,omitempty"`
-	Visibility string `json:"visibility,omitempty"`
-	Type       string `json:"type,omitempty"`
+	Code       int      `json:"code"`
+	Msg        string   `json:"msg,omitempty"`
+	Name       string   `json:"name,omitempty"`
+	Value      string   `json:"value,omitempty"`
+	Owner      uint32   `json:"owner,omitempty"`
+	Visibility string   `json:"visibility,omitempty"`
+	Type       string   `json:"type,omitempty"`
 	Names      []string `json:"names,omitempty"`
 }
 
@@ -72,15 +84,12 @@ type varRecord struct {
 	Type       string
 }
 
-// VarStoreHandler implements SubProto=3 variable propagation with single set/get actions.
-// - set: upsert variable (key = ownerID:name); only owner can create; others can update (with visibility rules); notify owner when updated by others.
-// - get: read cached; forward upstream if missing.
 type VarStoreHandler struct {
 	log *slog.Logger
 
 	mu      sync.RWMutex
-	records map[string]varRecord       // key: ownerID:name
-	pending map[pendingKey][]string    // (owner,name,kind) -> waiting connIDs for responses
+	records map[string]varRecord       // key: owner:name
+	pending map[pendingKey][]string    // (owner,name,kind) -> waiting connIDs
 	cache   map[string]map[uint32]bool // name -> owners known
 
 	permCfg *permission.Config
@@ -93,8 +102,10 @@ type pendingKey struct {
 }
 
 const (
-	pendingKindGet  = "get"
-	pendingKindList = "list"
+	pendingKindGet    = "get"
+	pendingKindList   = "list"
+	pendingKindSet    = "set"
+	pendingKindRevoke = "revoke"
 )
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
@@ -104,6 +115,11 @@ func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
 func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreHandler {
 	if log == nil {
 		log = slog.Default()
+	}
+	if cfg == nil {
+		cfg = coreconfig.NewMap(map[string]string{
+			coreconfig.KeyAuthDefaultPerms: "",
+		})
 	}
 	h := &VarStoreHandler{
 		log:     log,
@@ -123,6 +139,9 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 // AcceptCmd 声明 Cmd 帧在 target!=local 时也需要本地处理一次。
 func (h *VarStoreHandler) AcceptCmd() bool { return true }
 
+// AllowSourceMismatch 允许在未绑定 nodeID 前处理（测试场景/调试）。
+func (h *VarStoreHandler) AllowSourceMismatch() bool { return true }
+
 func (h *VarStoreHandler) SubProto() uint8 { return 3 }
 
 func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
@@ -133,283 +152,411 @@ func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, 
 	}
 	act := strings.ToLower(strings.TrimSpace(msg.Action))
 	switch act {
-	case actionVarSet:
+	case varActionSet:
 		h.handleSet(ctx, conn, hdr, msg.Data, false)
-	case actionVarAssistSet:
+	case varActionAssistSet:
 		h.handleSet(ctx, conn, hdr, msg.Data, true)
-	case actionVarGet:
+	case varActionSetResp, varActionAssistSetResp:
+		h.handleSetResp(ctx, msg.Data)
+	case varActionUpSet:
+		h.handleUpSet(ctx, msg.Data)
+	case varActionNotifySet:
+		h.handleNotifySet(ctx, msg.Data)
+
+	case varActionGet:
 		h.handleGet(ctx, conn, hdr, msg.Data, false)
-	case actionVarAssistGet:
+	case varActionAssistGet:
 		h.handleGet(ctx, conn, hdr, msg.Data, true)
-	case actionVarAssistGetResp:
+	case varActionGetResp, varActionAssistGetResp:
 		h.handleGetResp(ctx, msg.Data)
-	case actionVarList:
+
+	case varActionList:
 		h.handleList(ctx, conn, hdr, msg.Data, false)
-	case actionVarAssistList:
+	case varActionAssistList:
 		h.handleList(ctx, conn, hdr, msg.Data, true)
-	case actionVarAssistListResp:
+	case varActionListResp, varActionAssistListResp:
 		h.handleListResp(ctx, msg.Data)
-	case actionVarNotifyUpdate:
-		h.handleNotifyUpdate(msg.Data)
+
+	case varActionRevoke:
+		h.handleRevoke(ctx, conn, hdr, msg.Data, false)
+	case varActionAssistRevoke:
+		h.handleRevoke(ctx, conn, hdr, msg.Data, true)
+	case varActionRevokeResp, varActionAssistRevokeResp:
+		h.handleRevokeResp(ctx, msg.Data)
+	case varActionUpRevoke:
+		h.handleUpRevoke(ctx, msg.Data)
+	case varActionNotifyRevoke:
+		h.handleNotifyRevoke(ctx, msg.Data)
+
 	default:
 		h.log.Debug("unknown varstore action", "action", act)
 	}
 }
 
-// set (upsert) handler
+// set / assist_set
 func (h *VarStoreHandler) handleSet(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
 	var req setReq
-	if err := json.Unmarshal(data, &req); err != nil || !validVarName(req.Name) {
-		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 400, Msg: "invalid set"})
+	if err := json.Unmarshal(data, &req); err != nil || !validVarName(req.Name) || strings.TrimSpace(req.Value) == "" {
+		h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{Code: 2, Msg: "invalid set", Name: req.Name, Owner: req.Owner})
 		return
 	}
-	source := hdr.SourceID()
-	owner := firstNonZero(req.Owner, source)
+	owner := req.Owner
 	if owner == 0 {
-		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 400, Msg: "owner required"})
+		if owners, ok := h.cache[req.Name]; ok && len(owners) == 1 {
+			for o := range owners {
+				owner = o
+			}
+		}
+	}
+	owner = firstNonZero(owner, hdr.SourceID())
+	if owner == 0 {
+		h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{Code: 2, Msg: "owner required", Name: req.Name})
 		return
 	}
 	req.Owner = owner
-	actorID := permission.SourceNodeID(hdr, conn)
-	existingRec, found := h.lookupOwned(owner, req.Name)
-
-	// creation rule: only owner (SourceID) can create when not found
-	if !found && owner != source {
-		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 403, Msg: "owner required"})
-		return
-	}
-	if needsPrivatePermission(found, existingRec, req) && !h.hasPermission(actorID, permission.VarPrivateSet) {
-		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 4403, Msg: "permission denied", Name: req.Name})
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
 		return
 	}
 
-	var rec varRecord
-	if found {
-		rec = existingRec
-		// permission: private only owner can update
-		if !rec.IsPublic && owner != source && !h.hasPermission(actorID, permission.VarPrivateSet) {
-			h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 403, Msg: "forbidden"})
+	// 判断是否在当前子树
+	if !h.ownerInSubtree(ctx, owner) {
+		if parent := h.findParent(ctx); parent != nil {
+			h.addPending(owner, req.Name, conn.ID(), pendingKindSet)
+			h.forward(ctx, parent, varActionAssistSet, req, srv.NodeID())
 			return
 		}
-		rec.Value = req.Value
-		if req.Type != "" {
-			rec.Type = req.Type
-		}
-		if req.Visibility != "" {
-			rec.IsPublic = strings.ToLower(req.Visibility) == visibilityPublic
-			rec.Visibility = req.Visibility
-		}
-	} else {
-		rec = varRecord{
-			Value:      req.Value,
-			Owner:      owner,
-			IsPublic:   strings.ToLower(req.Visibility) == visibilityPublic,
-			Visibility: req.Visibility,
-			Type:       defaultType(req.Type),
-		}
+		h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{Code: 4, Msg: "not found", Name: req.Name, Owner: owner})
+		return
 	}
 
-	key := h.key(owner, req.Name)
-	h.mu.Lock()
-	h.records[key] = rec
-	h.addOwnerCache(req.Name, owner)
-	h.mu.Unlock()
+	actorID := permission.SourceNodeID(hdr, conn)
+	existing, found := h.lookupOwned(owner, req.Name)
 
-	if !assisted {
-		h.sendResp(ctx, conn, hdr, actionVarSetResp, varResp{Code: 1, Msg: "ok", Name: req.Name, Owner: owner, Visibility: visString(rec), Type: rec.Type})
+	// 创建仅 owner
+	if !found && actorID != owner {
+		h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{Code: 3, Msg: "owner required", Name: req.Name, Owner: owner})
+		return
 	}
-
-	// notify owner if updated by others
-	if found && owner != 0 && owner != source && !req.Notified {
-		h.notifyOwner(ctx, owner, req.Name, req.Value, rec.Type)
-		req.Notified = true
-	}
-
-	// forward upstream
-	if shouldForwardUp(ctx, hdr) {
-		if parent := h.findParent(ctx); parent != nil {
-			h.forward(ctx, parent, actionVarAssistSet, req, hdr.SourceID())
+	// private 更新权限
+	nextVis := strings.TrimSpace(req.Visibility)
+	if nextVis == "" {
+		if found {
+			nextVis = existing.Visibility
+		} else if existing.IsPublic {
+			nextVis = visibilityPublic
 		}
+	}
+	if strings.ToLower(nextVis) != visibilityPublic && actorID != owner && !h.hasPermission(actorID, permission.VarPrivateSet) {
+		h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{Code: 3, Msg: "permission denied", Name: req.Name, Owner: owner})
+		return
+	}
+
+	rec := existing
+	rec.Owner = owner
+	rec.Value = req.Value
+	if strings.TrimSpace(req.Type) != "" {
+		rec.Type = req.Type
+	} else if rec.Type == "" {
+		rec.Type = "string"
+	}
+	if strings.TrimSpace(req.Visibility) != "" {
+		rec.Visibility = strings.TrimSpace(req.Visibility)
+		rec.IsPublic = strings.ToLower(req.Visibility) == visibilityPublic
+	} else if rec.Visibility == "" {
+		rec.Visibility = visibilityPrivate
+		rec.IsPublic = false
+	}
+
+	h.saveRecord(req.Name, rec)
+
+	// 向上同步缓存
+	if parent := h.findParent(ctx); parent != nil {
+		h.forward(ctx, parent, varActionUpSet, req, srv.NodeID())
+	}
+
+	// 响应与通知：始终回请求者；若请求者!=owner，则额外通知 owner
+	h.sendResp(ctx, conn, hdr, chooseSetResp(assisted), varResp{
+		Code:       1,
+		Msg:        "ok",
+		Name:       req.Name,
+		Owner:      owner,
+		Visibility: rec.Visibility,
+		Type:       rec.Type,
+	})
+	if actorID != owner {
+		h.sendNotifySet(ctx, owner, req.Name, rec)
 	}
 }
 
-// get handler
+// get / assist_get
 func (h *VarStoreHandler) handleGet(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
 	var req getReq
 	if err := json.Unmarshal(data, &req); err != nil || !validVarName(req.Name) {
-		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 400, Msg: "invalid get"})
+		h.sendResp(ctx, conn, hdr, chooseGetResp(assisted), varResp{Code: 2, Msg: "invalid get"})
 		return
 	}
-	targetOwner := firstNonZero(req.Owner, hdr.SourceID())
-	if targetOwner == 0 {
-		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 400, Msg: "owner required"})
+	owner := firstNonZero(req.Owner, hdr.SourceID())
+	if owner == 0 {
+		h.sendResp(ctx, conn, hdr, chooseGetResp(assisted), varResp{Code: 2, Msg: "owner required"})
 		return
 	}
-	req.Owner = targetOwner
-	actorID := permission.SourceNodeID(hdr, conn)
-	if rec, ok := h.lookupOwned(targetOwner, req.Name); ok {
-		if rec.IsPublic || targetOwner == hdr.SourceID() || h.hasPermission(actorID, permission.VarPrivateSet) {
-			h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{
+	req.Owner = owner
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+
+	if rec, ok := h.lookupOwned(owner, req.Name); ok {
+		if rec.IsPublic || owner == hdr.SourceID() || h.hasPermission(permission.SourceNodeID(hdr, conn), permission.VarPrivateSet) {
+			h.sendResp(ctx, conn, hdr, chooseGetResp(assisted), varResp{
 				Code:       1,
 				Msg:        "ok",
 				Name:       req.Name,
 				Value:      rec.Value,
-				Owner:      targetOwner,
-				Visibility: visString(rec),
+				Owner:      owner,
+				Visibility: rec.Visibility,
 				Type:       rec.Type,
 			})
 			return
 		}
-		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 403, Msg: "forbidden"})
+		h.sendResp(ctx, conn, hdr, chooseGetResp(assisted), varResp{Code: 3, Msg: "forbidden"})
 		return
 	}
-	if shouldForwardUp(ctx, hdr) {
-		if parent := h.findParent(ctx); parent != nil {
-			h.addPending(targetOwner, req.Name, conn.ID(), pendingKindGet)
-			h.forward(ctx, parent, actionVarAssistGet, req, hdr.SourceID())
-			return
-		}
-		h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 404, Msg: "not found"})
+
+	if parent := h.findParent(ctx); parent != nil {
+		h.addPending(owner, req.Name, conn.ID(), pendingKindGet)
+		h.forward(ctx, parent, varActionAssistGet, req, srv.NodeID())
 		return
 	}
-	// 无法上行且未命中
-	h.sendResp(ctx, conn, hdr, actionVarGetResp, varResp{Code: 404, Msg: "not found"})
+	h.sendResp(ctx, conn, hdr, chooseGetResp(assisted), varResp{Code: 4, Msg: "not found", Name: req.Name, Owner: owner})
 }
 
-// list handler: return public variable names for an owner.
+// list / assist_list
 func (h *VarStoreHandler) handleList(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
 	var req listReq
 	if err := json.Unmarshal(data, &req); err != nil {
-		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 400, Msg: "invalid list"})
+		h.sendResp(ctx, conn, hdr, chooseListResp(assisted), varResp{Code: 2, Msg: "invalid list"})
 		return
 	}
-	targetOwner := firstNonZero(req.Owner, hdr.SourceID())
-	if targetOwner == 0 {
-		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 400, Msg: "owner required"})
+	owner := firstNonZero(req.Owner, hdr.SourceID())
+	if owner == 0 {
+		h.sendResp(ctx, conn, hdr, chooseListResp(assisted), varResp{Code: 2, Msg: "owner required"})
 		return
 	}
-	req.Owner = targetOwner
+	req.Owner = owner
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
 
-	names := h.listPublicNames(targetOwner)
+	names := h.listPublicNames(owner)
 	if len(names) > 0 {
-		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 1, Msg: "ok", Owner: targetOwner, Names: names})
+		h.sendResp(ctx, conn, hdr, chooseListResp(assisted), varResp{Code: 1, Msg: "ok", Owner: owner, Names: names})
 		return
 	}
-	if shouldForwardUp(ctx, hdr) {
-		if parent := h.findParent(ctx); parent != nil {
-			h.addPending(targetOwner, "", conn.ID(), pendingKindList)
-			h.forward(ctx, parent, actionVarAssistList, req, hdr.SourceID())
-			return
-		}
-		h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 404, Msg: "not found", Owner: targetOwner})
+
+	if parent := h.findParent(ctx); parent != nil {
+		h.addPending(owner, "", conn.ID(), pendingKindList)
+		h.forward(ctx, parent, varActionAssistList, req, srv.NodeID())
 		return
 	}
-	h.sendResp(ctx, conn, hdr, actionVarListResp, varResp{Code: 404, Msg: "not found", Owner: targetOwner})
+	h.sendResp(ctx, conn, hdr, chooseListResp(assisted), varResp{Code: 4, Msg: "not found", Owner: owner})
 }
 
-// assist_get_resp fan-out
+// revoke / assist_revoke
+func (h *VarStoreHandler) handleRevoke(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
+	var req getReq
+	if err := json.Unmarshal(data, &req); err != nil || !validVarName(req.Name) {
+		h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 2, Msg: "invalid revoke"})
+		return
+	}
+	owner := firstNonZero(req.Owner, hdr.SourceID())
+	if owner == 0 {
+		h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 2, Msg: "owner required"})
+		return
+	}
+	req.Owner = owner
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+
+	if !h.ownerInSubtree(ctx, owner) {
+		if parent := h.findParent(ctx); parent != nil {
+			h.addPending(owner, req.Name, conn.ID(), pendingKindRevoke)
+			h.forward(ctx, parent, varActionAssistRevoke, req, srv.NodeID())
+			return
+		}
+		h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 4, Msg: "not found", Name: req.Name, Owner: owner})
+		return
+	}
+
+	actorID := permission.SourceNodeID(hdr, conn)
+	if actorID != owner && !h.hasPermission(actorID, permission.VarRevoke) {
+		h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 3, Msg: "forbidden", Name: req.Name, Owner: owner})
+		return
+	}
+
+	if _, ok := h.lookupOwned(owner, req.Name); !ok {
+		// 尝试继续向上查询
+		if parent := h.findParent(ctx); parent != nil {
+			h.addPending(owner, req.Name, conn.ID(), pendingKindRevoke)
+			h.forward(ctx, parent, varActionAssistRevoke, req, srv.NodeID())
+			return
+		}
+		h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 4, Msg: "not found", Name: req.Name, Owner: owner})
+		return
+	}
+
+	h.deleteRecord(owner, req.Name)
+
+	if parent := h.findParent(ctx); parent != nil {
+		h.forward(ctx, parent, varActionUpRevoke, req, srv.NodeID())
+	}
+
+	h.sendResp(ctx, conn, hdr, chooseRevokeResp(assisted), varResp{Code: 1, Msg: "ok", Name: req.Name, Owner: owner})
+	if actorID != owner {
+		h.sendNotifyRevoke(ctx, owner, req.Name)
+	}
+}
+
+// responses from upstream
+func (h *VarStoreHandler) handleSetResp(ctx context.Context, data json.RawMessage) {
+	var resp varResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+	connIDs := h.popPending(resp.Owner, resp.Name, pendingKindSet)
+	if resp.Code == 1 {
+		rec := varRecord{
+			Value:      resp.Value,
+			Owner:      resp.Owner,
+			Visibility: resp.Visibility,
+			Type:       resp.Type,
+			IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
+		}
+		h.saveRecord(resp.Name, rec)
+	}
+	h.broadcastPendingResp(ctx, connIDs, varActionSetResp, resp)
+}
+
 func (h *VarStoreHandler) handleGetResp(ctx context.Context, data json.RawMessage) {
 	var resp varResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
 	}
-	if resp.Name == "" {
-		return
-	}
 	connIDs := h.popPending(resp.Owner, resp.Name, pendingKindGet)
-	srv := core.ServerFromContext(ctx)
-	for _, id := range connIDs {
-		if srv == nil {
-			continue
-		}
-		if c, ok := srv.ConnManager().Get(id); ok {
-			h.sendResp(ctx, c, nil, actionVarGetResp, resp)
-		}
-	}
 	if resp.Code == 1 {
-		h.mu.Lock()
-		h.records[h.key(resp.Owner, resp.Name)] = varRecord{
+		rec := varRecord{
 			Value:      resp.Value,
 			Owner:      resp.Owner,
-			IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
 			Visibility: resp.Visibility,
 			Type:       resp.Type,
+			IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
 		}
-		h.addOwnerCache(resp.Name, resp.Owner)
-		h.mu.Unlock()
+		h.saveRecord(resp.Name, rec)
 	}
+	h.broadcastPendingResp(ctx, connIDs, varActionGetResp, resp)
 }
 
-// assist_list_resp fan-out
 func (h *VarStoreHandler) handleListResp(ctx context.Context, data json.RawMessage) {
 	var resp varResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
 	}
-	if resp.Owner == 0 {
-		return
-	}
 	connIDs := h.popPending(resp.Owner, "", pendingKindList)
-	srv := core.ServerFromContext(ctx)
-	for _, id := range connIDs {
-		if srv == nil {
-			continue
-		}
-		if c, ok := srv.ConnManager().Get(id); ok {
-			h.sendResp(ctx, c, nil, actionVarListResp, resp)
-		}
-	}
-	if resp.Code == 1 {
-		for _, name := range resp.Names {
-			if name == "" {
-				continue
-			}
-			h.addOwnerCache(name, resp.Owner)
-		}
-	}
+	h.broadcastPendingResp(ctx, connIDs, varActionListResp, resp)
 }
 
-// handleNotifyUpdate refreshes caches when relay hubs observe owner notifications in-flight.
-func (h *VarStoreHandler) handleNotifyUpdate(data json.RawMessage) {
+func (h *VarStoreHandler) handleRevokeResp(ctx context.Context, data json.RawMessage) {
 	var resp varResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
 	}
-	if resp.Owner == 0 || resp.Name == "" {
+	connIDs := h.popPending(resp.Owner, resp.Name, pendingKindRevoke)
+	if resp.Code == 1 {
+		h.deleteRecord(resp.Owner, resp.Name)
+	}
+	h.broadcastPendingResp(ctx, connIDs, varActionRevokeResp, resp)
+}
+
+// up_* handlers
+func (h *VarStoreHandler) handleUpSet(ctx context.Context, data json.RawMessage) {
+	var req setReq
+	if err := json.Unmarshal(data, &req); err != nil || req.Owner == 0 || req.Name == "" {
 		return
 	}
-	h.mu.Lock()
-	h.records[h.key(resp.Owner, resp.Name)] = varRecord{
+	rec := varRecord{
+		Value:      req.Value,
+		Owner:      req.Owner,
+		Visibility: strings.TrimSpace(req.Visibility),
+		Type:       req.Type,
+		IsPublic:   strings.ToLower(req.Visibility) == visibilityPublic,
+	}
+	h.saveRecord(req.Name, rec)
+	if parent := h.findParent(ctx); parent != nil {
+		srv := core.ServerFromContext(ctx)
+		if srv != nil {
+			h.forward(ctx, parent, varActionUpSet, req, srv.NodeID())
+		}
+	}
+}
+
+func (h *VarStoreHandler) handleUpRevoke(ctx context.Context, data json.RawMessage) {
+	var req getReq
+	if err := json.Unmarshal(data, &req); err != nil || req.Owner == 0 || req.Name == "" {
+		return
+	}
+	h.deleteRecord(req.Owner, req.Name)
+	if parent := h.findParent(ctx); parent != nil {
+		srv := core.ServerFromContext(ctx)
+		if srv != nil {
+			h.forward(ctx, parent, varActionUpRevoke, req, srv.NodeID())
+		}
+	}
+}
+
+// notify handlers
+func (h *VarStoreHandler) handleNotifySet(ctx context.Context, data json.RawMessage) {
+	var resp varResp
+	if err := json.Unmarshal(data, &resp); err != nil || resp.Name == "" || resp.Owner == 0 {
+		return
+	}
+	rec := varRecord{
 		Value:      resp.Value,
 		Owner:      resp.Owner,
-		IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
 		Visibility: resp.Visibility,
 		Type:       resp.Type,
+		IsPublic:   strings.ToLower(resp.Visibility) == visibilityPublic,
 	}
-	h.addOwnerCache(resp.Name, resp.Owner)
-	h.mu.Unlock()
+	h.saveRecord(resp.Name, rec)
+}
+
+func (h *VarStoreHandler) handleNotifyRevoke(ctx context.Context, data json.RawMessage) {
+	var resp varResp
+	if err := json.Unmarshal(data, &resp); err != nil || resp.Owner == 0 || resp.Name == "" {
+		return
+	}
+	h.deleteRecord(resp.Owner, resp.Name)
 }
 
 // helpers
-func (h *VarStoreHandler) lookupAny(name string) (varRecord, uint32, bool) {
-	// legacy fallback: remains for compatibility where owner 未指定。
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if owners, ok := h.cache[name]; ok {
-		for owner := range owners {
-			if rec, ok2 := h.records[h.key(owner, name)]; ok2 {
-				return rec, owner, true
-			}
-		}
+func (h *VarStoreHandler) ownerInSubtree(ctx context.Context, owner uint32) bool {
+	if owner == 0 {
+		return false
 	}
-	for k, v := range h.records {
-		if strings.HasSuffix(k, ":"+name) {
-			if owner, err := strconv.ParseUint(strings.SplitN(k, ":", 2)[0], 10, 32); err == nil {
-				return v, uint32(owner), true
-			}
-		}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return false
 	}
-	return varRecord{}, 0, false
+	if srv.NodeID() == owner {
+		return true
+	}
+	if _, ok := srv.ConnManager().GetByNode(owner); ok {
+		return true
+	}
+	return false
 }
 
 func (h *VarStoreHandler) lookupOwned(owner uint32, name string) (varRecord, bool) {
@@ -420,6 +567,17 @@ func (h *VarStoreHandler) lookupOwned(owner uint32, name string) (varRecord, boo
 	rec, ok := h.records[h.key(owner, name)]
 	h.mu.RUnlock()
 	return rec, ok
+}
+
+func (h *VarStoreHandler) saveRecord(name string, rec varRecord) {
+	if name == "" || rec.Owner == 0 {
+		return
+	}
+	key := h.key(rec.Owner, name)
+	h.mu.Lock()
+	h.records[key] = rec
+	h.addOwnerCache(name, rec.Owner)
+	h.mu.Unlock()
 }
 
 func (h *VarStoreHandler) listPublicNames(owner uint32) []string {
@@ -443,6 +601,10 @@ func (h *VarStoreHandler) listPublicNames(owner uint32) []string {
 	return names
 }
 
+func (h *VarStoreHandler) key(owner uint32, name string) string {
+	return strconv.FormatUint(uint64(owner), 10) + ":" + name
+}
+
 func (h *VarStoreHandler) addOwnerCache(name string, owner uint32) {
 	if owner == 0 || name == "" {
 		return
@@ -453,8 +615,22 @@ func (h *VarStoreHandler) addOwnerCache(name string, owner uint32) {
 	h.cache[name][owner] = true
 }
 
-func (h *VarStoreHandler) key(owner uint32, name string) string {
-	return strconv.FormatUint(uint64(owner), 10) + ":" + name
+func (h *VarStoreHandler) deleteRecord(owner uint32, name string) {
+	if owner == 0 || name == "" {
+		return
+	}
+	k := h.key(owner, name)
+	h.mu.Lock()
+	delete(h.records, k)
+	if owners, ok := h.cache[name]; ok {
+		delete(owners, owner)
+		if len(owners) == 0 {
+			delete(h.cache, name)
+		} else {
+			h.cache[name] = owners
+		}
+	}
+	h.mu.Unlock()
 }
 
 func (h *VarStoreHandler) addPending(owner uint32, name, connID string, kind string) {
@@ -473,12 +649,32 @@ func (h *VarStoreHandler) popPending(owner uint32, name string, kind string) []s
 	return conns
 }
 
+func (h *VarStoreHandler) broadcastPendingResp(ctx context.Context, connIDs []string, action string, resp varResp) {
+	if len(connIDs) == 0 {
+		return
+	}
+	for _, id := range connIDs {
+		h.sendResp(ctx, h.lookupConn(ctx, id), nil, action, resp)
+	}
+}
+
+func (h *VarStoreHandler) lookupConn(ctx context.Context, id string) core.IConnection {
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return nil
+	}
+	if c, ok := srv.ConnManager().Get(id); ok {
+		return c
+	}
+	return nil
+}
+
 func (h *VarStoreHandler) sendResp(ctx context.Context, conn core.IConnection, reqHdr core.IHeader, action string, data varResp) {
 	msg := varMessage{Action: action}
 	raw, _ := json.Marshal(data)
 	msg.Data = raw
 	payload, _ := json.Marshal(msg)
-	hdr := h.buildHeader(ctx, reqHdr, action)
+	hdr := h.buildRespHeader(ctx, reqHdr, data.Owner)
 	if srv := core.ServerFromContext(ctx); srv != nil && conn != nil {
 		_ = srv.Send(ctx, conn.ID(), hdr, payload)
 		return
@@ -489,7 +685,7 @@ func (h *VarStoreHandler) sendResp(ctx context.Context, conn core.IConnection, r
 	}
 }
 
-func (h *VarStoreHandler) buildHeader(ctx context.Context, reqHdr core.IHeader, action string) core.IHeader {
+func (h *VarStoreHandler) buildRespHeader(ctx context.Context, reqHdr core.IHeader, target uint32) core.IHeader {
 	var base core.IHeader = &header.HeaderTcp{}
 	if reqHdr != nil {
 		base = reqHdr.Clone()
@@ -498,18 +694,10 @@ func (h *VarStoreHandler) buildHeader(ctx context.Context, reqHdr core.IHeader, 
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		src = srv.NodeID()
 	}
-	// 默认将响应返回给原请求的 SourceID，避免 TargetID 停留在本地节点。
-	respTarget := base.TargetID()
-	if reqHdr != nil && reqHdr.SourceID() != 0 {
-		respTarget = reqHdr.SourceID()
+	if target == 0 && reqHdr != nil && reqHdr.SourceID() != 0 {
+		target = reqHdr.SourceID()
 	}
-	major := base.Major()
-	if action == actionVarGetResp || action == actionVarAssistGetResp || action == actionVarNotifyUpdate {
-		major = header.MajorCmd
-	} else {
-		major = header.MajorOKResp
-	}
-	return base.WithMajor(major).WithSubProto(3).WithSourceID(src).WithTargetID(respTarget)
+	return base.WithMajor(header.MajorOKResp).WithSubProto(3).WithSourceID(src).WithTargetID(target)
 }
 
 func (h *VarStoreHandler) forward(ctx context.Context, target core.IConnection, action string, data any, srcID uint32) {
@@ -527,8 +715,8 @@ func (h *VarStoreHandler) forward(ctx context.Context, target core.IConnection, 
 			hdr.WithSourceID(srv.NodeID())
 		}
 	}
-	if meta, ok := target.GetMeta("nodeID"); ok {
-		if v, ok2 := meta.(uint32); ok2 {
+	if nid, ok := target.GetMeta("nodeID"); ok {
+		if v, ok2 := nid.(uint32); ok2 {
 			hdr.WithTargetID(v)
 		}
 	}
@@ -540,80 +728,132 @@ func (h *VarStoreHandler) forward(ctx context.Context, target core.IConnection, 
 	_ = target.SendWithHeader(hdr, payload, codec)
 }
 
-func (h *VarStoreHandler) findParent(ctx context.Context) core.IConnection {
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return nil
-	}
-	if c, ok := findParentConn(srv.ConnManager()); ok {
-		return c
-	}
-	return nil
-}
-
-func (h *VarStoreHandler) notifyOwner(ctx context.Context, owner uint32, name, value, typ string) {
-	srv := core.ServerFromContext(ctx)
-	if srv == nil || owner == 0 {
+func (h *VarStoreHandler) sendNotifySet(ctx context.Context, owner uint32, name string, rec varRecord) {
+	if owner == 0 || name == "" {
 		return
 	}
-	cm := srv.ConnManager()
-	resp := varResp{Code: 1, Msg: "updated", Name: name, Value: value, Owner: owner, Type: typ}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+	resp := varResp{
+		Code:       1,
+		Name:       name,
+		Owner:      owner,
+		Value:      rec.Value,
+		Visibility: rec.Visibility,
+		Type:       rec.Type,
+	}
+	raw, _ := json.Marshal(resp)
+	msg := varMessage{Action: varActionNotifySet, Data: raw}
+	payload, _ := json.Marshal(msg)
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(3).
 		WithSourceID(srv.NodeID()).
 		WithTargetID(owner)
-	payloadData, _ := json.Marshal(resp)
-	msg := varMessage{Action: actionVarNotifyUpdate, Data: payloadData}
-	payload, _ := json.Marshal(msg)
+	_ = srv.Send(ctx, ownerConnID(ctx, srv, owner), hdr, payload)
+}
 
-	// direct to owner if connected
-	if c, ok := cm.GetByNode(owner); ok {
-		_ = srv.Send(ctx, c.ID(), hdr, payload)
+func (h *VarStoreHandler) sendNotifyRevoke(ctx context.Context, owner uint32, name string) {
+	if owner == 0 || name == "" {
 		return
 	}
-	// upward to parent if direct not found
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+	resp := varResp{
+		Code:  1,
+		Name:  name,
+		Owner: owner,
+	}
+	raw, _ := json.Marshal(resp)
+	msg := varMessage{Action: varActionNotifyRevoke, Data: raw}
+	payload, _ := json.Marshal(msg)
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(srv.NodeID()).
+		WithTargetID(owner)
+	_ = srv.Send(ctx, ownerConnID(ctx, srv, owner), hdr, payload)
+}
+
+func ownerConnID(ctx context.Context, srv core.IServer, owner uint32) string {
+	if srv == nil || owner == 0 {
+		return ""
+	}
+	if c, ok := srv.ConnManager().GetByNode(owner); ok {
+		return c.ID()
+	}
+	return ""
+}
+
+func (h *VarStoreHandler) findParent(ctx context.Context) core.IConnection {
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return nil
+	}
+	if c, ok := findParentConnVar(srv.ConnManager()); ok {
+		return c
+	}
+	return nil
+}
+
+func findParentConnVar(cm core.IConnectionManager) (core.IConnection, bool) {
+	var parent core.IConnection
 	cm.Range(func(c core.IConnection) bool {
 		if role, ok := c.GetMeta(core.MetaRoleKey); ok {
 			if s, ok2 := role.(string); ok2 && s == core.RoleParent {
-				_ = srv.Send(ctx, c.ID(), hdr, payload)
+				parent = c
 				return false
 			}
 		}
 		return true
 	})
+	return parent, parent != nil
 }
 
-func needsPrivatePermission(found bool, current varRecord, req setReq) bool {
-	if found {
-		nextVis := current.Visibility
-		if strings.TrimSpace(req.Visibility) != "" {
-			nextVis = req.Visibility
-		}
-		if strings.TrimSpace(nextVis) == "" {
-			if current.IsPublic {
-				nextVis = visibilityPublic
-			} else {
-				nextVis = visibilityPrivate
-			}
-		}
-		return strings.ToLower(nextVis) != visibilityPublic
+func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
+	if h.permCfg == nil {
+		return false
 	}
-	vis := strings.ToLower(strings.TrimSpace(req.Visibility))
-	if vis == "" {
-		vis = visibilityPrivate
-	}
-	return vis != visibilityPublic
+	return h.permCfg.Has(nodeID, perm)
 }
 
-func visString(rec varRecord) string {
-	if rec.IsPublic {
-		return visibilityPublic
+func chooseSetResp(assisted bool) string {
+	if assisted {
+		return varActionAssistSetResp
 	}
-	if rec.Visibility != "" {
-		return rec.Visibility
+	return varActionSetResp
+}
+
+func chooseGetResp(assisted bool) string {
+	if assisted {
+		return varActionAssistGetResp
 	}
-	return visibilityPrivate
+	return varActionGetResp
+}
+
+func chooseListResp(assisted bool) string {
+	if assisted {
+		return varActionAssistListResp
+	}
+	return varActionListResp
+}
+
+func chooseRevokeResp(assisted bool) string {
+	if assisted {
+		return varActionAssistRevokeResp
+	}
+	return varActionRevokeResp
+}
+
+func firstNonZero(a, b uint32) uint32 {
+	if a != 0 {
+		return a
+	}
+	return b
 }
 
 func validVarName(name string) bool {
@@ -637,39 +877,4 @@ func validVarName(name string) bool {
 		return false
 	}
 	return true
-}
-
-func defaultType(typ string) string {
-	if strings.TrimSpace(typ) == "" {
-		return "string"
-	}
-	return typ
-}
-
-func shouldForwardUp(ctx context.Context, hdr core.IHeader) bool {
-	if hdr == nil {
-		return true
-	}
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return true
-	}
-	local := srv.NodeID()
-	tgt := hdr.TargetID()
-	// 仅在目标是本地或 0（上送父）时由 handler 主动上行；否则预路由已转发，无需重复。
-	return tgt == 0 || tgt == local
-}
-
-func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
-	if h.permCfg == nil {
-		return false
-	}
-	return h.permCfg.Has(nodeID, perm)
-}
-
-func firstNonZero(a, b uint32) uint32 {
-	if a != 0 {
-		return a
-	}
-	return b
 }
