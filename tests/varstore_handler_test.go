@@ -10,7 +10,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
+	"github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
 type sentFrame struct {
@@ -82,7 +82,7 @@ func (s *recordServer) Send(_ context.Context, connID string, hdr core.IHeader, 
 }
 
 func TestVarStoreSetNewByOwner(t *testing.T) {
-	h := handler.NewVarStoreHandler(nil)
+	h := varstore.NewVarStoreHandler(nil)
 	cm := connmgr.New()
 	conn := newRecordConn("c1")
 	conn.SetMeta("nodeID", uint32(1))
@@ -117,7 +117,7 @@ func TestVarStoreSetNewByOwner(t *testing.T) {
 }
 
 func TestVarStoreUpdateByOtherPublicNotify(t *testing.T) {
-	h := handler.NewVarStoreHandler(nil)
+	h := varstore.NewVarStoreHandler(nil)
 	cm := connmgr.New()
 	ownerConn := newRecordConn("owner")
 	ownerConn.SetMeta("nodeID", uint32(10))
@@ -161,7 +161,7 @@ func TestVarStoreUpdateByOtherPublicNotify(t *testing.T) {
 }
 
 func TestVarStorePrivateUpdateForbidden(t *testing.T) {
-	h := handler.NewVarStoreHandler(nil)
+	h := varstore.NewVarStoreHandler(nil)
 	cm := connmgr.New()
 	ownerConn := newRecordConn("owner")
 	ownerConn.SetMeta("nodeID", uint32(10))
@@ -200,7 +200,7 @@ func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
 		config.KeyAuthNodeRoles:    "10:writer",
 		config.KeyAuthRolePerms:    "writer:var.private_set",
 	})
-	h := handler.NewVarStoreHandlerWithConfig(cfg, nil)
+	h := varstore.NewVarStoreHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 	parent := newRecordConn("parent")
 	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
@@ -272,7 +272,7 @@ func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
 }
 
 func TestVarStoreGetMissForwardAndCache(t *testing.T) {
-	h := handler.NewVarStoreHandler(nil)
+	h := varstore.NewVarStoreHandler(nil)
 	cm := connmgr.New()
 	child := newRecordConn("child")
 	child.SetMeta("nodeID", uint32(2))

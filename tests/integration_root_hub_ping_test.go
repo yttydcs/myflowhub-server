@@ -16,6 +16,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	vartstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
 // Integration: Root (node=1) -> LoginServer (node=100) -> Hub (self-register) -> Client (Echo ping).
@@ -27,7 +28,7 @@ func TestRootHubPing(t *testing.T) {
 	rootCfg := config.NewMap(map[string]string{
 		"addr": rootAddr,
 	})
-	rootHandlers := []core.ISubProcess{auth.NewLoginHandlerWithConfig(rootCfg, nil), handler.NewVarStoreHandlerWithConfig(rootCfg, nil)}
+	rootHandlers := []core.ISubProcess{auth.NewLoginHandlerWithConfig(rootCfg, nil), vartstore.NewVarStoreHandlerWithConfig(rootCfg, nil)}
 	rootSrv := startTestServer(t, server.Options{
 		Name:     "Root",
 		Process:  makeProcess(t, rootCfg, rootHandlers),
@@ -60,7 +61,7 @@ func TestRootHubPing(t *testing.T) {
 		config.KeyParentEnable: "true",
 		config.KeyParentAddr:   rootAddr,
 	})
-	hubHandlers := []core.ISubProcess{handler.NewEchoHandler(nil), auth.NewLoginHandlerWithConfig(hubCfg, nil), handler.NewVarStoreHandlerWithConfig(hubCfg, nil)}
+	hubHandlers := []core.ISubProcess{handler.NewEchoHandler(nil), auth.NewLoginHandlerWithConfig(hubCfg, nil), vartstore.NewVarStoreHandlerWithConfig(hubCfg, nil)}
 	hubSrv := startTestServer(t, server.Options{
 		Name:     "Hub",
 		Process:  makeProcess(t, hubCfg, hubHandlers),

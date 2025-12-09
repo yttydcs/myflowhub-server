@@ -1,4 +1,4 @@
-package handler
+package varstore
 
 import (
 	"context"
@@ -14,76 +14,6 @@ import (
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
-const (
-	varActionSet           = "set"
-	varActionAssistSet     = "assist_set"
-	varActionSetResp       = "set_resp"
-	varActionAssistSetResp = "assist_set_resp"
-	varActionUpSet         = "up_set"
-	varActionNotifySet     = "notify_set"
-
-	varActionGet           = "get"
-	varActionAssistGet     = "assist_get"
-	varActionGetResp       = "get_resp"
-	varActionAssistGetResp = "assist_get_resp"
-
-	varActionList           = "list"
-	varActionAssistList     = "assist_list"
-	varActionListResp       = "list_resp"
-	varActionAssistListResp = "assist_list_resp"
-
-	varActionRevoke           = "revoke"
-	varActionAssistRevoke     = "assist_revoke"
-	varActionRevokeResp       = "revoke_resp"
-	varActionAssistRevokeResp = "assist_revoke_resp"
-	varActionUpRevoke         = "up_revoke"
-	varActionNotifyRevoke     = "notify_revoke"
-
-	visibilityPublic  = "public"
-	visibilityPrivate = "private"
-)
-
-type varMessage struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
-
-type setReq struct {
-	Name       string `json:"name"`
-	Value      string `json:"value"`
-	Visibility string `json:"visibility"`
-	Type       string `json:"type,omitempty"`
-	Owner      uint32 `json:"owner,omitempty"`
-}
-
-type getReq struct {
-	Name  string `json:"name"`
-	Owner uint32 `json:"owner,omitempty"`
-}
-
-type listReq struct {
-	Owner uint32 `json:"owner,omitempty"`
-}
-
-type varResp struct {
-	Code       int      `json:"code"`
-	Msg        string   `json:"msg,omitempty"`
-	Name       string   `json:"name,omitempty"`
-	Value      string   `json:"value,omitempty"`
-	Owner      uint32   `json:"owner,omitempty"`
-	Visibility string   `json:"visibility,omitempty"`
-	Type       string   `json:"type,omitempty"`
-	Names      []string `json:"names,omitempty"`
-}
-
-type varRecord struct {
-	Value      string
-	Owner      uint32
-	IsPublic   bool
-	Visibility string
-	Type       string
-}
-
 type VarStoreHandler struct {
 	log *slog.Logger
 
@@ -94,19 +24,6 @@ type VarStoreHandler struct {
 
 	permCfg *permission.Config
 }
-
-type pendingKey struct {
-	owner uint32
-	name  string
-	kind  string
-}
-
-const (
-	pendingKindGet    = "get"
-	pendingKindList   = "list"
-	pendingKindSet    = "set"
-	pendingKindRevoke = "revoke"
-)
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
 	return NewVarStoreHandlerWithConfig(nil, log)
@@ -779,16 +696,6 @@ func (h *VarStoreHandler) sendNotifyRevoke(ctx context.Context, owner uint32, na
 	_ = srv.Send(ctx, ownerConnID(ctx, srv, owner), hdr, payload)
 }
 
-func ownerConnID(ctx context.Context, srv core.IServer, owner uint32) string {
-	if srv == nil || owner == 0 {
-		return ""
-	}
-	if c, ok := srv.ConnManager().GetByNode(owner); ok {
-		return c.ID()
-	}
-	return ""
-}
-
 func (h *VarStoreHandler) findParent(ctx context.Context) core.IConnection {
 	srv := core.ServerFromContext(ctx)
 	if srv == nil {
@@ -819,62 +726,4 @@ func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
 		return false
 	}
 	return h.permCfg.Has(nodeID, perm)
-}
-
-func chooseSetResp(assisted bool) string {
-	if assisted {
-		return varActionAssistSetResp
-	}
-	return varActionSetResp
-}
-
-func chooseGetResp(assisted bool) string {
-	if assisted {
-		return varActionAssistGetResp
-	}
-	return varActionGetResp
-}
-
-func chooseListResp(assisted bool) string {
-	if assisted {
-		return varActionAssistListResp
-	}
-	return varActionListResp
-}
-
-func chooseRevokeResp(assisted bool) string {
-	if assisted {
-		return varActionAssistRevokeResp
-	}
-	return varActionRevokeResp
-}
-
-func firstNonZero(a, b uint32) uint32 {
-	if a != 0 {
-		return a
-	}
-	return b
-}
-
-func validVarName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		ch := name[i]
-		if ch >= 'a' && ch <= 'z' {
-			continue
-		}
-		if ch >= 'A' && ch <= 'Z' {
-			continue
-		}
-		if ch >= '0' && ch <= '9' {
-			continue
-		}
-		if ch == '_' {
-			continue
-		}
-		return false
-	}
-	return true
 }

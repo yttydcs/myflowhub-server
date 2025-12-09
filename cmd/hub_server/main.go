@@ -20,6 +20,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
 type options struct {
@@ -75,7 +76,7 @@ func main() {
 		log.Error("register login handler failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(handler.NewVarStoreHandlerWithConfig(cfg, log)); err != nil {
+	if err := dispatcher.RegisterHandler(varstore.NewVarStoreHandlerWithConfig(cfg, log)); err != nil {
 		log.Error("register varstore handler failed", "err", err)
 		os.Exit(1)
 	}
