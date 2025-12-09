@@ -27,6 +27,7 @@ VarStore 协议（SubProto=3）新规范
   - list：`{"owner":5}` → `{"code":1,"owner":5,"names":["a","b"]}`
   - revoke：`{"name":"temp","owner":5}` → `{"code":1,"name":"temp","owner":5}`
   - notify_set/revoke：携带 name/owner/可选 value/type/visibility（更新时才携带），沿链路缓存。
+  - 旧文档中的概要已从 core.md 移至此处。
 
 路由与头部
 ----------

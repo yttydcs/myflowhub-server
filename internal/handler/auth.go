@@ -235,6 +235,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 		// being processed at authority
 		nodeID := h.ensureNodeID(req.DeviceID)
 		cred := h.ensureCredential(req.DeviceID)
+		h.addRouteIndex(ctx, nodeID, conn)
 		h.sendResp(ctx, conn, hdr, actionAssistRegisterResp, respData{
 			Code:       1,
 			Msg:        "ok",
@@ -309,6 +310,7 @@ func (h *LoginHandler) handleLogin(ctx context.Context, conn core.IConnection, h
 			h.sendResp(ctx, conn, hdr, actionAssistLoginResp, respData{Code: 4001, Msg: "invalid credential"})
 			return
 		}
+		h.addRouteIndex(ctx, rec.NodeID, conn)
 		h.sendResp(ctx, conn, hdr, actionAssistLoginResp, respData{
 			Code:       1,
 			Msg:        "ok",
@@ -427,6 +429,7 @@ func (h *LoginHandler) handleAssistQueryResp(ctx context.Context, data json.RawM
 		if resp.Code == 1 {
 			h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
 			h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
+			h.addRouteIndex(ctx, resp.NodeID, c)
 			h.sendResp(ctx, c, nil, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: resp.DeviceID, NodeID: resp.NodeID, Credential: resp.Credential, Role: resp.Role, Perms: resp.Perms})
 			return
 		}
@@ -462,13 +465,9 @@ func (h *LoginHandler) saveBinding(ctx context.Context, conn core.IConnection, d
 	conn.SetMeta("perms", perms)
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		if cm := srv.ConnManager(); cm != nil {
-			if updater, ok := cm.(interface {
-				UpdateNodeIndex(uint32, core.IConnection)
-				UpdateDeviceIndex(string, core.IConnection)
-			}); ok {
-				updater.UpdateNodeIndex(nodeID, conn)
-				updater.UpdateDeviceIndex(deviceID, conn)
-			}
+			cm.UpdateNodeIndex(nodeID, conn)
+			cm.UpdateDeviceIndex(deviceID, conn)
+			h.addRouteIndex(ctx, nodeID, conn)
 		}
 	}
 }
@@ -502,14 +501,10 @@ func (h *LoginHandler) removeBinding(deviceID, cred string) (removed bool, misma
 func (h *LoginHandler) removeIndexes(ctx context.Context, nodeID uint32, conn core.IConnection) {
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		if cm := srv.ConnManager(); cm != nil {
-			if updater, ok := cm.(interface {
-				UpdateNodeIndex(uint32, core.IConnection)
-				UpdateDeviceIndex(string, core.IConnection)
-			}); ok {
-				if nodeID != 0 {
-					updater.UpdateNodeIndex(nodeID, nil)
-				}
+			if nodeID != 0 {
+				cm.UpdateNodeIndex(nodeID, nil)
 			}
+			h.removeRouteIndex(ctx, nodeID)
 		}
 	}
 }
@@ -1080,6 +1075,29 @@ func (h *LoginHandler) broadcastPermsSnapshot(ctx context.Context, src core.ICon
 		}
 		return true
 	})
+}
+
+// route index helpers: allow mapping child nodeIDs to the connection carrying them.
+func (h *LoginHandler) addRouteIndex(ctx context.Context, nodeID uint32, conn core.IConnection) {
+	if nodeID == 0 || conn == nil {
+		return
+	}
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		if cm := srv.ConnManager(); cm != nil {
+			cm.AddNodeIndex(nodeID, conn)
+		}
+	}
+}
+
+func (h *LoginHandler) removeRouteIndex(ctx context.Context, nodeID uint32) {
+	if nodeID == 0 {
+		return
+	}
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		if cm := srv.ConnManager(); cm != nil {
+			cm.RemoveNodeIndex(nodeID)
+		}
+	}
 }
 
 func filterRolePerms(entries []rolePermEntry, req listRolesReq) ([]rolePermEntry, int) {
