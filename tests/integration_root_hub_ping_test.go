@@ -78,6 +78,24 @@ func TestRootHubPing(t *testing.T) {
 		t.Fatalf("dial hub: %v", err)
 	}
 	defer conn.Close()
+	// 绑定服务端对应的连接 nodeID，模拟已登录状态以满足 Source 校验。
+	clientAddr := conn.LocalAddr().String()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		found := false
+		hubSrv.ConnManager().Range(func(c core.IConnection) bool {
+			if c.RemoteAddr() != nil && c.RemoteAddr().String() == clientAddr {
+				c.SetMeta("nodeID", nodeID)
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 
 	codec := header.HeaderTcpCodec{}
 	payload := []byte("ping")

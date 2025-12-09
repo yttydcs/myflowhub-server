@@ -31,6 +31,7 @@ func TestLoginHandlerGetPermsAndListRoles(t *testing.T) {
 	// get_perms
 	req := mustJSON(map[string]any{"action": "get_perms", "data": map[string]any{"node_id": 5}})
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	hdr.WithSourceID(5)
 	h.OnReceive(ctx, conn, hdr, req)
 
 	if len(conn.sent) != 1 {
@@ -110,6 +111,7 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 
 	// invalidate node 5
 	req := mustJSON(map[string]any{"action": "perms_invalidate", "data": map[string]any{"node_ids": []uint32{nodeID}}})
+	hdr.WithSourceID(nodeID)
 	h.OnReceive(ctx, connTarget, hdr, req)
 
 	// meta cleared for node 5
@@ -146,6 +148,7 @@ func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 
 	req := mustJSON(map[string]any{"action": "perms_invalidate", "data": map[string]any{"node_ids": []uint32{10}, "refresh": true}})
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	hdr.WithSourceID(10)
 	h.OnReceive(ctx, child, hdr, req)
 
 	if len(parent.sent) == 0 {
@@ -180,6 +183,7 @@ func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
 
 	req := mustJSON(map[string]any{"action": "perms_invalidate", "data": map[string]any{"refresh": true}})
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	hdr.WithSourceID(10)
 	h.OnReceive(ctx, child, hdr, req)
 
 	if len(parent.sent) == 0 {
@@ -227,6 +231,7 @@ func TestLoginHandlerApplyPermsSnapshot(t *testing.T) {
 	}
 	payload, _ := json.Marshal(msg)
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	hdr.WithSourceID(99)
 
 	h.OnReceive(ctx, parent, hdr, payload)
 
@@ -248,7 +253,8 @@ func TestLoginHandlerApplyPermsSnapshot(t *testing.T) {
 	}
 	child.sent = nil
 	req := mustJSON(map[string]any{"action": "get_perms", "data": map[string]any{"node_id": 5}})
-	h.OnReceive(ctx, child, hdr, req)
+	hdrChild := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithSourceID(5)
+	h.OnReceive(ctx, child, hdrChild, req)
 	if len(child.sent) == 0 {
 		t.Fatalf("expected get_perms response after snapshot")
 	}

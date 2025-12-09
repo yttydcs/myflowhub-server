@@ -89,7 +89,8 @@ type recordHandler struct {
 	ch  chan<- string
 }
 
-func (h *recordHandler) SubProto() uint8 { return h.sub }
+func (h *recordHandler) SubProto() uint8           { return h.sub }
+func (h *recordHandler) AllowSourceMismatch() bool { return true }
 func (h *recordHandler) OnReceive(_ context.Context, conn core.IConnection, _ core.IHeader, payload []byte) {
 	h.ch <- fmt.Sprintf("%s|%s", conn.ID(), string(payload))
 }
