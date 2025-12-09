@@ -19,6 +19,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
+	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 )
 
 type options struct {
@@ -70,7 +71,7 @@ func main() {
 		log.Error("register echo handler failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(handler.NewLoginHandlerWithConfig(cfg, log)); err != nil {
+	if err := dispatcher.RegisterHandler(authhandler.NewLoginHandlerWithConfig(cfg, log)); err != nil {
 		log.Error("register login handler failed", "err", err)
 		os.Exit(1)
 	}

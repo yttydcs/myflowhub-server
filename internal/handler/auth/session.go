@@ -1,0 +1,137 @@
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+
+	core "github.com/yttydcs/myflowhub-core"
+	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+)
+
+func (h *LoginHandler) saveBinding(ctx context.Context, conn core.IConnection, deviceID string, nodeID uint32, cred string) {
+	role, perms := h.resolveRolePerms(nodeID)
+	h.mu.Lock()
+	h.whitelist[deviceID] = bindingRecord{NodeID: nodeID, Credential: cred, Role: role, Perms: perms}
+	h.mu.Unlock()
+	conn.SetMeta("nodeID", nodeID)
+	conn.SetMeta("deviceID", deviceID)
+	conn.SetMeta("role", role)
+	conn.SetMeta("perms", perms)
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		if cm := srv.ConnManager(); cm != nil {
+			cm.UpdateNodeIndex(nodeID, conn)
+			cm.UpdateDeviceIndex(deviceID, conn)
+			h.addRouteIndex(ctx, nodeID, conn)
+		}
+	}
+}
+
+func (h *LoginHandler) applyHubID(ctx context.Context, conn core.IConnection, hubID uint32) {
+	if conn == nil {
+		return
+	}
+	if hubID == 0 {
+		hubID = localNodeID(ctx)
+	}
+	if hubID != 0 {
+		conn.SetMeta("hubID", hubID)
+	}
+}
+
+func (h *LoginHandler) removeBinding(deviceID, cred string) (removed bool, mismatch bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rec, ok := h.whitelist[deviceID]
+	if !ok {
+		return false, false
+	}
+	if cred != "" && rec.Credential != cred {
+		return false, true
+	}
+	delete(h.whitelist, deviceID)
+	return true, false
+}
+
+func (h *LoginHandler) removeIndexes(ctx context.Context, nodeID uint32, conn core.IConnection) {
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		if cm := srv.ConnManager(); cm != nil {
+			if nodeID != 0 {
+				cm.UpdateNodeIndex(nodeID, nil)
+			}
+			h.removeRouteIndex(ctx, nodeID)
+		}
+	}
+}
+
+func (h *LoginHandler) lookup(deviceID string) (bindingRecord, bool) {
+	h.mu.RLock()
+	rec, ok := h.whitelist[deviceID]
+	h.mu.RUnlock()
+	if ok && rec.Role == "" {
+		rec.Role, rec.Perms = h.resolveRolePerms(rec.NodeID)
+		h.mu.Lock()
+		h.whitelist[deviceID] = rec
+		h.mu.Unlock()
+	}
+	return rec, ok
+}
+
+func (h *LoginHandler) hasPermission(nodeID uint32, perm string) bool {
+	if perm == "" || nodeID == 0 {
+		return true
+	}
+	_, perms, ok := h.lookupByNode(nodeID)
+	if !ok {
+		return false
+	}
+	for _, entry := range perms {
+		if entry == permission.Wildcard || entry == perm {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *LoginHandler) ensureNodeID(deviceID string) uint32 {
+	h.mu.RLock()
+	if rec, ok := h.whitelist[deviceID]; ok {
+		h.mu.RUnlock()
+		return rec.NodeID
+	}
+	h.mu.RUnlock()
+	next := h.nextID.Add(1) - 1
+	return next
+}
+
+func (h *LoginHandler) ensureCredential(deviceID string) string {
+	h.mu.RLock()
+	if rec, ok := h.whitelist[deviceID]; ok && rec.Credential != "" {
+		h.mu.RUnlock()
+		return rec.Credential
+	}
+	h.mu.RUnlock()
+	token := generateCredential()
+	return token
+}
+
+func generateCredential() string {
+	buf := make([]byte, 32)
+	_, _ = rand.Read(buf)
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
+func (h *LoginHandler) sourceMatches(conn core.IConnection, hdr core.IHeader) bool {
+	if conn == nil || hdr == nil {
+		return false
+	}
+	meta, ok := conn.GetMeta("nodeID")
+	if !ok {
+		return false
+	}
+	nid, ok := meta.(uint32)
+	if !ok || nid == 0 {
+		return false
+	}
+	return hdr.SourceID() == nid
+}

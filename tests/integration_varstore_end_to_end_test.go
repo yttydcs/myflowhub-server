@@ -16,6 +16,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
+	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 )
 
 // Integration: Root (node=1) + Hub (self-register) + set at hub, get at root.
@@ -26,7 +27,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	rootCfg := config.NewMap(map[string]string{"addr": rootAddr})
 	rootSrv := startTestServer(t, server.Options{
 		Name:     "Root",
-		Process:  makeProcess(t, rootCfg, []core.ISubProcess{handler.NewLoginHandlerWithConfig(rootCfg, nil), handler.NewVarStoreHandlerWithConfig(rootCfg, nil)}),
+		Process:  makeProcess(t, rootCfg, []core.ISubProcess{auth.NewLoginHandlerWithConfig(rootCfg, nil), handler.NewVarStoreHandlerWithConfig(rootCfg, nil)}),
 		Codec:    header.HeaderTcpCodec{},
 		Listener: tcp_listener.New(rootAddr),
 		Config:   rootCfg,
@@ -54,7 +55,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	})
 	hubSrv := startTestServer(t, server.Options{
 		Name:     "Hub",
-		Process:  makeProcess(t, hubCfg, []core.ISubProcess{handler.NewLoginHandlerWithConfig(hubCfg, nil), handler.NewVarStoreHandlerWithConfig(hubCfg, nil)}),
+		Process:  makeProcess(t, hubCfg, []core.ISubProcess{auth.NewLoginHandlerWithConfig(hubCfg, nil), handler.NewVarStoreHandlerWithConfig(hubCfg, nil)}),
 		Codec:    header.HeaderTcpCodec{},
 		Listener: tcp_listener.New(hubAddr),
 		Config:   hubCfg,

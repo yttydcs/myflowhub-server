@@ -19,6 +19,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
+	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 )
 
 // 该示例使用 MyFlowHub-Server 框架实现一个 TCP 服务端：
@@ -130,7 +131,7 @@ func buildProcess(cfg core.IConfig, logger *slog.Logger) (*process.DispatcherPro
 		slog.Error("注册 Echo handler 失败", "err", err)
 		return nil, err
 	}
-	if err := dispatcher.RegisterHandler(handler.NewLoginHandlerWithConfig(cfg, logger)); err != nil {
+	if err := dispatcher.RegisterHandler(authhandler.NewLoginHandlerWithConfig(cfg, logger)); err != nil {
 		slog.Error("注册 Login handler 失败", "err", err)
 		return nil, err
 	}

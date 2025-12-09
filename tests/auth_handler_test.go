@@ -11,7 +11,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
+	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 )
 
 func TestLoginHandlerGetPermsAndListRoles(t *testing.T) {
@@ -19,7 +19,7 @@ func TestLoginHandlerGetPermsAndListRoles(t *testing.T) {
 		config.KeyAuthNodeRoles: "5:admin",
 		config.KeyAuthRolePerms: "admin:p.read,p.write",
 	})
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 
 	cm := connmgr.New()
 	conn := newAuthConn("c1")
@@ -84,7 +84,7 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 	cfg := config.NewMap(map[string]string{
 		config.KeyAuthNodeRoles: "5:admin;6:node",
 	})
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 	connTarget := newAuthConn("c5")
 	_ = cm.Add(connTarget)
@@ -131,7 +131,7 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 
 func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -166,7 +166,7 @@ func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 
 func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -201,7 +201,7 @@ func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
 
 func TestLoginHandlerApplyPermsSnapshot(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -283,7 +283,7 @@ func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
 		config.KeyAuthNodeRoles:    "100:guest",
 		config.KeyAuthRolePerms:    "admin:auth.revoke",
 	})
-	h := handler.NewLoginHandlerWithConfig(cfg, nil)
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	cm := connmgr.New()
 	conn := newAuthConn("guest")
 	conn.SetMeta("nodeID", uint32(100))
