@@ -133,10 +133,13 @@ func NewAuthorityHandlerWithConfig(store Store, cfg core.IConfig, log *slog.Logg
 		rolePerms:   make(map[string][]string),
 	}
 	h.loadAuthConfig(cfg)
+	h.Init()
 	return h
 }
 
 func (h *AuthorityHandler) SubProto() uint8 { return 2 }
+
+func (h *AuthorityHandler) Init() bool { return true }
 
 // AllowSourceMismatch 权威登录入口允许 SourceID 与连接元数据不一致（未绑定 nodeID 前）。
 func (h *AuthorityHandler) AllowSourceMismatch() bool { return true }

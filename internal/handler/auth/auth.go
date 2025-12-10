@@ -44,11 +44,16 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 	}
 	h.loadAuthConfig(cfg)
 	h.nextID.Store(2)
-	h.initActions()
+	h.Init()
 	return h
 }
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
+
+func (h *LoginHandler) Init() bool {
+	h.initActions()
+	return true
+}
 
 // AllowSourceMismatch 登录阶段允许 SourceID 与连接元数据不一致（尚未绑定 nodeID）。
 func (h *LoginHandler) AllowSourceMismatch() bool { return true }

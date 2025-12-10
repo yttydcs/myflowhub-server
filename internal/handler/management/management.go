@@ -23,11 +23,16 @@ func NewHandler(log *slog.Logger) *Handler {
 		log = slog.Default()
 	}
 	h := &Handler{log: log}
-	h.initActions()
+	h.Init()
 	return h
 }
 
 func (h *Handler) SubProto() uint8 { return SubProtoManagement }
+
+func (h *Handler) Init() bool {
+	h.initActions()
+	return true
+}
 
 func (h *Handler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg mgmtMessage

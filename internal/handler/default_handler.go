@@ -68,6 +68,8 @@ func (h *DefaultForwardHandler) loadMap(raw string) {
 
 func (h *DefaultForwardHandler) SubProto() uint8 { return 0 }
 
+func (h *DefaultForwardHandler) Init() bool { return true }
+
 func (h *DefaultForwardHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	if hdr == nil {
 		return

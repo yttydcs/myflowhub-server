@@ -51,7 +51,7 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 	if h.permCfg == nil {
 		h.permCfg = permission.NewConfig(nil)
 	}
-	h.initActions()
+	h.Init()
 	return h
 }
 
@@ -62,6 +62,11 @@ func (h *VarStoreHandler) AcceptCmd() bool { return true }
 func (h *VarStoreHandler) AllowSourceMismatch() bool { return false }
 
 func (h *VarStoreHandler) SubProto() uint8 { return 3 }
+
+func (h *VarStoreHandler) Init() bool {
+	h.initActions()
+	return true
+}
 
 func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg varMessage
