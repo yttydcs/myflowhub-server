@@ -19,7 +19,7 @@ func TestLoginHandlerGetPermsAndListRoles(t *testing.T) {
 		config.KeyAuthNodeRoles: "5:admin",
 		config.KeyAuthRolePerms: "admin:p.read,p.write",
 	})
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 
 	cm := connmgr.New()
 	conn := newAuthConn("c1")
@@ -84,7 +84,7 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 	cfg := config.NewMap(map[string]string{
 		config.KeyAuthNodeRoles: "5:admin;6:node",
 	})
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 	cm := connmgr.New()
 	connTarget := newAuthConn("c5")
 	_ = cm.Add(connTarget)
@@ -131,7 +131,7 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 
 func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -166,7 +166,7 @@ func TestLoginHandlerPermsInvalidateRefreshToParent(t *testing.T) {
 
 func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -201,7 +201,7 @@ func TestLoginHandlerPermsInvalidateRefreshSnapshotRequest(t *testing.T) {
 
 func TestLoginHandlerApplyPermsSnapshot(t *testing.T) {
 	cfg := config.NewMap(nil)
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 	cm := connmgr.New()
 
 	parent := newAuthConn("parent")
@@ -283,7 +283,7 @@ func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
 		config.KeyAuthNodeRoles:    "100:guest",
 		config.KeyAuthRolePerms:    "admin:auth.revoke",
 	})
-	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h := newLoginHandlerForTest(cfg)
 	cm := connmgr.New()
 	conn := newAuthConn("guest")
 	conn.SetMeta("nodeID", uint32(100))
@@ -371,4 +371,10 @@ func (s *authServer) Send(_ context.Context, connID string, hdr core.IHeader, pa
 		return c.SendWithHeader(hdr, payload, header.HeaderTcpCodec{})
 	}
 	return nil
+}
+
+func newLoginHandlerForTest(cfg core.IConfig) *auth.LoginHandler {
+	h := auth.NewLoginHandlerWithConfig(cfg, nil)
+	h.Init()
+	return h
 }

@@ -10,10 +10,12 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 // LoginHandler implements register/login/revoke/offline flows with action+data payload.
 type LoginHandler struct {
+	subproto.BaseSubProcess
 	log *slog.Logger
 
 	nextID atomic.Uint32
@@ -44,13 +46,10 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 	}
 	h.loadAuthConfig(cfg)
 	h.nextID.Store(2)
-	h.Init()
 	return h
 }
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
-
-func (h *LoginHandler) AcceptCmd() bool { return false }
 
 func (h *LoginHandler) Init() bool {
 	h.initActions()

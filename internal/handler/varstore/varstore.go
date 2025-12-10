@@ -12,9 +12,11 @@ import (
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 type VarStoreHandler struct {
+	subproto.BaseSubProcess
 	log *slog.Logger
 
 	mu      sync.RWMutex
@@ -51,15 +53,11 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 	if h.permCfg == nil {
 		h.permCfg = permission.NewConfig(nil)
 	}
-	h.Init()
 	return h
 }
 
 // AcceptCmd 声明 Cmd 帧在 target!=local 时也需要本地处理一次。
 func (h *VarStoreHandler) AcceptCmd() bool { return true }
-
-// AllowSourceMismatch varstore 必须绑定 nodeID 后才能处理。
-func (h *VarStoreHandler) AllowSourceMismatch() bool { return false }
 
 func (h *VarStoreHandler) SubProto() uint8 { return 3 }
 

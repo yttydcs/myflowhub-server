@@ -13,6 +13,7 @@ import (
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 const (
@@ -104,6 +105,7 @@ type listRolesReq struct {
 
 // AuthorityHandler implements SubProto=2 as the authoritative login server backed by persistent storage.
 type AuthorityHandler struct {
+	subproto.BaseSubProcess
 	log   *slog.Logger
 	store Store
 
@@ -138,8 +140,6 @@ func NewAuthorityHandlerWithConfig(store Store, cfg core.IConfig, log *slog.Logg
 }
 
 func (h *AuthorityHandler) SubProto() uint8 { return 2 }
-
-func (h *AuthorityHandler) AcceptCmd() bool { return false }
 
 func (h *AuthorityHandler) Init() bool { return true }
 

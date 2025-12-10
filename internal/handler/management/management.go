@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 )
 
@@ -14,6 +15,7 @@ import (
 const SubProtoManagement uint8 = 1
 
 type ManagementHandler struct {
+	subproto.BaseSubProcess
 	log     *slog.Logger
 	actions map[string]core.SubProcessAction
 }
@@ -23,20 +25,15 @@ func NewHandler(log *slog.Logger) *ManagementHandler {
 		log = slog.Default()
 	}
 	h := &ManagementHandler{log: log}
-	h.Init()
 	return h
 }
 
 func (h *ManagementHandler) SubProto() uint8 { return SubProtoManagement }
 
-func (h *ManagementHandler) AcceptCmd() bool { return false }
-
 func (h *ManagementHandler) Init() bool {
 	h.initActions()
 	return true
 }
-
-func (h *ManagementHandler) AllowSourceMismatch() bool { return false }
 
 func (h *ManagementHandler) initActions() {
 	h.actions = make(map[string]core.SubProcessAction)
