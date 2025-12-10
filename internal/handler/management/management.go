@@ -29,10 +29,14 @@ func NewHandler(log *slog.Logger) *Handler {
 
 func (h *Handler) SubProto() uint8 { return SubProtoManagement }
 
+func (h *Handler) AcceptCmd() bool { return false }
+
 func (h *Handler) Init() bool {
 	h.initActions()
 	return true
 }
+
+func (h *Handler) AllowSourceMismatch() bool { return false }
 
 func (h *Handler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg mgmtMessage

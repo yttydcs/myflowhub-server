@@ -70,6 +70,10 @@ func (h *DefaultForwardHandler) SubProto() uint8 { return 0 }
 
 func (h *DefaultForwardHandler) Init() bool { return true }
 
+func (h *DefaultForwardHandler) AcceptCmd() bool { return false }
+
+func (h *DefaultForwardHandler) AllowSourceMismatch() bool { return false }
+
 func (h *DefaultForwardHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	if hdr == nil {
 		return

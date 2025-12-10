@@ -50,6 +50,8 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
 
+func (h *LoginHandler) AcceptCmd() bool { return false }
+
 func (h *LoginHandler) Init() bool {
 	h.initActions()
 	return true
