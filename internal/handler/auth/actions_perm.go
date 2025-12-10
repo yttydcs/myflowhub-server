@@ -7,9 +7,13 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
-type getPermsAction struct{ h *LoginHandler }
+type getPermsAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *getPermsAction) Name() string      { return actionGetPerms }
 func (a *getPermsAction) RequireAuth() bool { return true }
@@ -27,7 +31,10 @@ func (a *getPermsAction) Handle(ctx context.Context, conn core.IConnection, _ co
 	a.h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 1, Msg: "ok", NodeID: req.NodeID, Role: role, Perms: perms})
 }
 
-type listRolesAction struct{ h *LoginHandler }
+type listRolesAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *listRolesAction) Name() string      { return actionListRoles }
 func (a *listRolesAction) RequireAuth() bool { return true }
@@ -60,7 +67,10 @@ func (a *listRolesAction) Handle(ctx context.Context, conn core.IConnection, _ c
 	}
 }
 
-type permsInvalidateAction struct{ h *LoginHandler }
+type permsInvalidateAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *permsInvalidateAction) Name() string      { return actionPermsInvalidate }
 func (a *permsInvalidateAction) RequireAuth() bool { return true }
@@ -111,7 +121,10 @@ func (a *permsInvalidateAction) Handle(ctx context.Context, _ core.IConnection, 
 	}
 }
 
-type permsSnapshotAction struct{ h *LoginHandler }
+type permsSnapshotAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *permsSnapshotAction) Name() string      { return actionPermsSnapshot }
 func (a *permsSnapshotAction) RequireAuth() bool { return true }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 type loginAction struct {
+	subproto.BaseAction
 	h        *LoginHandler
 	assisted bool
 }
@@ -18,7 +20,6 @@ func (a *loginAction) Name() string {
 	}
 	return actionLogin
 }
-func (a *loginAction) RequireAuth() bool { return false }
 func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	var req loginData
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
@@ -63,10 +64,12 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 	a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid credential"})
 }
 
-type loginRespAction struct{ h *LoginHandler }
+type loginRespAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *loginRespAction) Name() string      { return actionLoginResp }
-func (a *loginRespAction) RequireAuth() bool { return false }
 func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
 	var resp respData
 	if err := json.Unmarshal(data, &resp); err != nil {

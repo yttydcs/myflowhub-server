@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 type offlineAction struct {
+	subproto.BaseAction
 	h        *LoginHandler
 	assisted bool
 }

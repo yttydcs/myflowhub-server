@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 type varAction struct {
+	subproto.BaseAction
 	name string
 	fn   func(context.Context, core.IConnection, core.IHeader, json.RawMessage)
 }
 
 func (a varAction) Name() string                     { return a.name }
-func (a varAction) RequireAuth() bool                { return false }
 func (a varAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	a.fn(ctx, conn, hdr, data)
 }

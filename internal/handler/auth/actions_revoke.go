@@ -6,9 +6,13 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
-type revokeAction struct{ h *LoginHandler }
+type revokeAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *revokeAction) Name() string      { return actionRevoke }
 func (a *revokeAction) RequireAuth() bool { return true }

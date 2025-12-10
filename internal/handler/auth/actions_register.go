@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 type registerAction struct {
+	subproto.BaseAction
 	h        *LoginHandler
 	assisted bool
 }
@@ -23,7 +25,10 @@ func (a *registerAction) Handle(ctx context.Context, conn core.IConnection, hdr 
 	a.h.handleRegister(ctx, conn, hdr, data, a.assisted)
 }
 
-type registerRespAction struct{ h *LoginHandler }
+type registerRespAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *registerRespAction) Name() string      { return actionRegisterResp }
 func (a *registerRespAction) RequireAuth() bool { return false }

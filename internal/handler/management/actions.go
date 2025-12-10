@@ -6,13 +6,16 @@ import (
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
 // node_echo: 管理类回显指令
-type nodeEchoAction struct{ h *Handler }
+type nodeEchoAction struct {
+	subproto.BaseAction
+	h *ManagementHandler
+}
 
 func (a *nodeEchoAction) Name() string      { return "node_echo" }
-func (a *nodeEchoAction) RequireAuth() bool { return false }
 func (a *nodeEchoAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	var req nodeEchoReq
 	if err := json.Unmarshal(data, &req); err != nil || strings.TrimSpace(req.Message) == "" {
@@ -21,16 +24,4 @@ func (a *nodeEchoAction) Handle(ctx context.Context, conn core.IConnection, hdr 
 	}
 	a.h.log.Info("management node_echo", "conn", conn.ID(), "message", req.Message)
 	a.h.sendActionResp(ctx, conn, hdr, "node_echo_resp", nodeEchoResp{Code: 1, Msg: "ok", Echo: req.Message})
-}
-
-func (h *Handler) initActions() {
-	h.actions = make(map[string]core.SubProcessAction)
-	h.registerAction(&nodeEchoAction{h: h})
-}
-
-func (h *Handler) registerAction(a core.SubProcessAction) {
-	if a == nil || a.Name() == "" {
-		return
-	}
-	h.actions[strings.ToLower(a.Name())] = a
 }

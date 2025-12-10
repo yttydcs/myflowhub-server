@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-core/subproto"
 )
 
-type assistQueryAction struct{ h *LoginHandler }
+type assistQueryAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *assistQueryAction) Name() string      { return actionAssistQueryCred }
 func (a *assistQueryAction) RequireAuth() bool { return true }
@@ -24,10 +28,12 @@ func (a *assistQueryAction) Handle(ctx context.Context, conn core.IConnection, h
 	a.h.sendResp(ctx, conn, hdr, actionAssistQueryCredResp, respData{Code: 4001, Msg: "not found"})
 }
 
-type assistQueryRespAction struct{ h *LoginHandler }
+type assistQueryRespAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
 
 func (a *assistQueryRespAction) Name() string      { return actionAssistQueryCredResp }
-func (a *assistQueryRespAction) RequireAuth() bool { return false }
 func (a *assistQueryRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
 	var resp respData
 	if err := json.Unmarshal(data, &resp); err != nil {
