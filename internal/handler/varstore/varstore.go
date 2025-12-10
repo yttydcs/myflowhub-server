@@ -23,6 +23,7 @@ type VarStoreHandler struct {
 	cache   map[string]map[uint32]bool // name -> owners known
 
 	permCfg *permission.Config
+	actions map[string]core.SubProcessAction
 }
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
@@ -50,14 +51,15 @@ func NewVarStoreHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *VarStoreH
 	if h.permCfg == nil {
 		h.permCfg = permission.NewConfig(nil)
 	}
+	h.initActions()
 	return h
 }
 
 // AcceptCmd 声明 Cmd 帧在 target!=local 时也需要本地处理一次。
 func (h *VarStoreHandler) AcceptCmd() bool { return true }
 
-// AllowSourceMismatch 允许在未绑定 nodeID 前处理（测试场景/调试）。
-func (h *VarStoreHandler) AllowSourceMismatch() bool { return true }
+// AllowSourceMismatch varstore 必须绑定 nodeID 后才能处理。
+func (h *VarStoreHandler) AllowSourceMismatch() bool { return false }
 
 func (h *VarStoreHandler) SubProto() uint8 { return 3 }
 
@@ -68,46 +70,12 @@ func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, 
 		return
 	}
 	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	switch act {
-	case varActionSet:
-		h.handleSet(ctx, conn, hdr, msg.Data, false)
-	case varActionAssistSet:
-		h.handleSet(ctx, conn, hdr, msg.Data, true)
-	case varActionSetResp, varActionAssistSetResp:
-		h.handleSetResp(ctx, msg.Data)
-	case varActionUpSet:
-		h.handleUpSet(ctx, msg.Data)
-	case varActionNotifySet:
-		h.handleNotifySet(ctx, msg.Data)
-
-	case varActionGet:
-		h.handleGet(ctx, conn, hdr, msg.Data, false)
-	case varActionAssistGet:
-		h.handleGet(ctx, conn, hdr, msg.Data, true)
-	case varActionGetResp, varActionAssistGetResp:
-		h.handleGetResp(ctx, msg.Data)
-
-	case varActionList:
-		h.handleList(ctx, conn, hdr, msg.Data, false)
-	case varActionAssistList:
-		h.handleList(ctx, conn, hdr, msg.Data, true)
-	case varActionListResp, varActionAssistListResp:
-		h.handleListResp(ctx, msg.Data)
-
-	case varActionRevoke:
-		h.handleRevoke(ctx, conn, hdr, msg.Data, false)
-	case varActionAssistRevoke:
-		h.handleRevoke(ctx, conn, hdr, msg.Data, true)
-	case varActionRevokeResp, varActionAssistRevokeResp:
-		h.handleRevokeResp(ctx, msg.Data)
-	case varActionUpRevoke:
-		h.handleUpRevoke(ctx, msg.Data)
-	case varActionNotifyRevoke:
-		h.handleNotifyRevoke(ctx, msg.Data)
-
-	default:
+	entry, ok := h.actions[act]
+	if !ok {
 		h.log.Debug("unknown varstore action", "action", act)
+		return
 	}
+	entry.Handle(ctx, conn, hdr, msg.Data)
 }
 
 // set / assist_set
@@ -726,4 +694,18 @@ func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
 		return false
 	}
 	return h.permCfg.Has(nodeID, perm)
+}
+
+func (h *VarStoreHandler) initActions() {
+	h.actions = make(map[string]core.SubProcessAction)
+	for _, act := range registerVarActions(h) {
+		h.registerAction(act)
+	}
+}
+
+func (h *VarStoreHandler) registerAction(a core.SubProcessAction) {
+	if a == nil || a.Name() == "" {
+		return
+	}
+	h.actions[strings.ToLower(a.Name())] = a
 }

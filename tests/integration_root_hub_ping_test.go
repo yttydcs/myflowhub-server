@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	"github.com/yttydcs/myflowhub-server/internal/handler/management"
 	vartstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
@@ -61,7 +63,7 @@ func TestRootHubPing(t *testing.T) {
 		config.KeyParentEnable: "true",
 		config.KeyParentAddr:   rootAddr,
 	})
-	hubHandlers := []core.ISubProcess{handler.NewEchoHandler(nil), auth.NewLoginHandlerWithConfig(hubCfg, nil), vartstore.NewVarStoreHandlerWithConfig(hubCfg, nil)}
+	hubHandlers := []core.ISubProcess{management.NewHandler(nil), auth.NewLoginHandlerWithConfig(hubCfg, nil), vartstore.NewVarStoreHandlerWithConfig(hubCfg, nil)}
 	hubSrv := startTestServer(t, server.Options{
 		Name:     "Hub",
 		Process:  makeProcess(t, hubCfg, hubHandlers),
@@ -74,7 +76,7 @@ func TestRootHubPing(t *testing.T) {
 	defer stopTestServer(t, hubSrv)
 	waitListen(t, hubAddr, 2*time.Second)
 
-	// Client sends echo to hub.
+	// Client sends mgmt echo to hub.
 	conn, err := net.Dial("tcp", hubAddr)
 	if err != nil {
 		t.Fatalf("dial hub: %v", err)
@@ -100,10 +102,13 @@ func TestRootHubPing(t *testing.T) {
 	}
 
 	codec := header.HeaderTcpCodec{}
-	payload := []byte("ping")
+	payload := mustJSON(map[string]any{
+		"action": "node_echo",
+		"data":   map[string]any{"message": "ping"},
+	})
 	hdr := (&header.HeaderTcp{}).
-		WithMajor(header.MajorMsg).
-		WithSubProto(handler.SubProtoEcho).
+		WithMajor(header.MajorCmd).
+		WithSubProto(management.SubProtoManagement).
 		WithSourceID(nodeID).
 		WithTargetID(nodeID).
 		WithMsgID(1).
@@ -116,8 +121,21 @@ func TestRootHubPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if string(respPayload) != "ECHO: ping" {
-		t.Fatalf("unexpected payload: %s", string(respPayload))
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(respPayload, &msg)
+	if msg.Action != "node_echo_resp" {
+		t.Fatalf("unexpected action: %s", msg.Action)
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Echo string `json:"echo"`
+	}
+	_ = json.Unmarshal(msg.Data, &resp)
+	if resp.Code != 1 || resp.Echo != "ping" {
+		t.Fatalf("unexpected resp: %+v", resp)
 	}
 }
 

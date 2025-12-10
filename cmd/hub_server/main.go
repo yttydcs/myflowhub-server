@@ -20,6 +20,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	"github.com/yttydcs/myflowhub-server/internal/handler/management"
 	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
@@ -68,8 +69,8 @@ func main() {
 		log.Error("build dispatcher failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(handler.NewEchoHandler(log)); err != nil {
-		log.Error("register echo handler failed", "err", err)
+	if err := dispatcher.RegisterHandler(management.NewHandler(log)); err != nil {
+		log.Error("register management handler failed", "err", err)
 		os.Exit(1)
 	}
 	if err := dispatcher.RegisterHandler(authhandler.NewLoginHandlerWithConfig(cfg, log)); err != nil {

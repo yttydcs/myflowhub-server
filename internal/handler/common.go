@@ -8,11 +8,6 @@ import (
 	"github.com/yttydcs/myflowhub-core/header"
 )
 
-// Sub-protocol ID 常量定义：统一管理避免分散，demo 中用
-const (
-	SubProtoEcho = 1 // 回显子协议
-)
-
 // CloneRequest 封装请求头部的克隆操作。
 func CloneRequest(h core.IHeader) *header.HeaderTcp {
 	return header.CloneToTCP(h)

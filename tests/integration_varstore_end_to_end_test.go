@@ -64,6 +64,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	})
 	defer stopTestServer(t, hubSrv)
 	waitListen(t, hubAddr, 2*time.Second)
+	bindParentChildNodeIDs(t, rootSrv, hubSrv, hubNodeID, 1)
 
 	// set from hub connection（请求方直连父节点=hub）
 	setConn, err := net.Dial("tcp", hubAddr)
@@ -72,6 +73,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	}
 	defer setConn.Close()
 	setCodec := header.HeaderTcpCodec{}
+	bindConnNodeID(t, hubSrv, setConn, hubNodeID)
 	setPayload := mustJSON(map[string]any{
 		"action": "set",
 		"data": map[string]any{
@@ -105,6 +107,7 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 		t.Fatalf("dial root: %v", err)
 	}
 	defer getConn.Close()
+	bindConnNodeID(t, rootSrv, getConn, hubNodeID)
 	getCodec := header.HeaderTcpCodec{}
 	getPayload := mustJSON(map[string]any{
 		"action": "get",
@@ -140,4 +143,64 @@ func TestIntegrationVarStoreSetGetAcrossHub(t *testing.T) {
 	if data.Code != 1 || data.Value != "22.5" {
 		t.Fatalf("unexpected resp %+v", data)
 	}
+}
+
+func bindConnNodeID(t *testing.T, srv core.IServer, conn net.Conn, nodeID uint32) {
+	t.Helper()
+	clientAddr := conn.LocalAddr().String()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		found := false
+		srv.ConnManager().Range(func(c core.IConnection) bool {
+			if c.RemoteAddr() != nil && c.RemoteAddr().String() == clientAddr {
+				c.SetMeta("nodeID", nodeID)
+				found = true
+				return false
+			}
+			return true
+		})
+		if found {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("bind nodeID timeout for %s", clientAddr)
+}
+
+func bindParentChildNodeIDs(t *testing.T, rootSrv, hubSrv core.IServer, hubNodeID, rootNodeID uint32) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		rootBound := false
+		hubBound := false
+		if rootSrv != nil {
+			rootSrv.ConnManager().Range(func(c core.IConnection) bool {
+				if role, ok := c.GetMeta(core.MetaRoleKey); ok {
+					if s, ok2 := role.(string); ok2 && s == core.RoleChild {
+						c.SetMeta("nodeID", hubNodeID)
+						rootBound = true
+						return false
+					}
+				}
+				return true
+			})
+		}
+		if hubSrv != nil {
+			hubSrv.ConnManager().Range(func(c core.IConnection) bool {
+				if role, ok := c.GetMeta(core.MetaRoleKey); ok {
+					if s, ok2 := role.(string); ok2 && s == core.RoleParent {
+						c.SetMeta("nodeID", rootNodeID)
+						hubBound = true
+						return false
+					}
+				}
+				return true
+			})
+		}
+		if rootBound && hubBound {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("bind parent-child nodeIDs timeout")
 }
