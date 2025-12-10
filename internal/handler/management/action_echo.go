@@ -16,6 +16,7 @@ type nodeEchoAction struct {
 }
 
 func (a *nodeEchoAction) Name() string      { return "node_echo" }
+func (a *nodeEchoAction) RequireAuth() bool { return false }
 func (a *nodeEchoAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	var req nodeEchoReq
 	if err := json.Unmarshal(data, &req); err != nil || strings.TrimSpace(req.Message) == "" {

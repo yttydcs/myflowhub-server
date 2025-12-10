@@ -38,6 +38,11 @@ func (h *ManagementHandler) Init() bool {
 func (h *ManagementHandler) initActions() {
 	h.actions = make(map[string]core.SubProcessAction)
 	h.registerAction(&nodeEchoAction{h: h})
+	h.registerAction(&configGetAction{h: h})
+	h.registerAction(&configSetAction{h: h})
+	h.registerAction(&configListAction{h: h})
+	h.registerAction(&listNodesAction{h: h})
+	h.registerAction(&listSubtreeAction{h: h})
 }
 
 func (h *ManagementHandler) registerAction(a core.SubProcessAction) {
