@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/subproto"
@@ -15,9 +14,8 @@ import (
 const SubProtoManagement uint8 = 1
 
 type ManagementHandler struct {
-	subproto.BaseSubProcess
-	log     *slog.Logger
-	actions map[string]core.SubProcessAction
+	subproto.ActionBaseSubProcess
+	log *slog.Logger
 }
 
 func NewHandler(log *slog.Logger) *ManagementHandler {
@@ -36,20 +34,13 @@ func (h *ManagementHandler) Init() bool {
 }
 
 func (h *ManagementHandler) initActions() {
-	h.actions = make(map[string]core.SubProcessAction)
-	h.registerAction(&nodeEchoAction{h: h})
-	h.registerAction(&configGetAction{h: h})
-	h.registerAction(&configSetAction{h: h})
-	h.registerAction(&configListAction{h: h})
-	h.registerAction(&listNodesAction{h: h})
-	h.registerAction(&listSubtreeAction{h: h})
-}
-
-func (h *ManagementHandler) registerAction(a core.SubProcessAction) {
-	if a == nil || a.Name() == "" {
-		return
-	}
-	h.actions[strings.ToLower(a.Name())] = a
+	h.ResetActions()
+	h.RegisterAction(&nodeEchoAction{h: h})
+	h.RegisterAction(&configGetAction{h: h})
+	h.RegisterAction(&configSetAction{h: h})
+	h.RegisterAction(&configListAction{h: h})
+	h.RegisterAction(&listNodesAction{h: h})
+	h.RegisterAction(&listSubtreeAction{h: h})
 }
 
 func (h *ManagementHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
@@ -66,10 +57,9 @@ func (h *ManagementHandler) OnReceive(ctx context.Context, conn core.IConnection
 		h.log.Debug("management target mismatch, drop", "target", hdr.TargetID(), "local", srv.NodeID())
 		return
 	}
-	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	entry, ok := h.actions[act]
+	entry, ok := h.LookupAction(msg.Action)
 	if !ok {
-		h.log.Debug("unknown management action", "action", act)
+		h.log.Debug("unknown management action", "action", msg.Action)
 		return
 	}
 	entry.Handle(ctx, conn, hdr, msg.Data)

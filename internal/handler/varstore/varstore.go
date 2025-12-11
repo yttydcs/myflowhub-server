@@ -16,7 +16,7 @@ import (
 )
 
 type VarStoreHandler struct {
-	subproto.BaseSubProcess
+	subproto.ActionBaseSubProcess
 	log *slog.Logger
 
 	mu      sync.RWMutex
@@ -25,7 +25,6 @@ type VarStoreHandler struct {
 	cache   map[string]map[uint32]bool // name -> owners known
 
 	permCfg *permission.Config
-	actions map[string]core.SubProcessAction
 }
 
 func NewVarStoreHandler(log *slog.Logger) *VarStoreHandler {
@@ -72,10 +71,9 @@ func (h *VarStoreHandler) OnReceive(ctx context.Context, conn core.IConnection, 
 		h.log.Warn("varstore invalid payload", "err", err)
 		return
 	}
-	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	entry, ok := h.actions[act]
+	entry, ok := h.LookupAction(msg.Action)
 	if !ok {
-		h.log.Debug("unknown varstore action", "action", act)
+		h.log.Debug("unknown varstore action", "action", msg.Action)
 		return
 	}
 	entry.Handle(ctx, conn, hdr, msg.Data)
@@ -700,15 +698,8 @@ func (h *VarStoreHandler) hasPermission(nodeID uint32, perm string) bool {
 }
 
 func (h *VarStoreHandler) initActions() {
-	h.actions = make(map[string]core.SubProcessAction)
+	h.ResetActions()
 	for _, act := range registerVarActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
-}
-
-func (h *VarStoreHandler) registerAction(a core.SubProcessAction) {
-	if a == nil || a.Name() == "" {
-		return
-	}
-	h.actions[strings.ToLower(a.Name())] = a
 }

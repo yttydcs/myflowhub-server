@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -15,7 +14,7 @@ import (
 
 // LoginHandler implements register/login/revoke/offline flows with action+data payload.
 type LoginHandler struct {
-	subproto.BaseSubProcess
+	subproto.ActionBaseSubProcess
 	log *slog.Logger
 
 	nextID atomic.Uint32
@@ -27,8 +26,6 @@ type LoginHandler struct {
 	authNode uint32
 
 	permCfg *permission.Config
-
-	actions map[string]core.SubProcessAction
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -65,44 +62,36 @@ func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr
 		h.log.Warn("invalid login payload", "err", err)
 		return
 	}
-	act := strings.ToLower(strings.TrimSpace(msg.Action))
-	entry, ok := h.actions[act]
+	entry, ok := h.LookupAction(msg.Action)
 	if !ok {
-		h.log.Debug("unknown login action", "action", act)
+		h.log.Debug("unknown login action", "action", msg.Action)
 		return
 	}
 	if entry.RequireAuth() && !h.sourceMatches(conn, hdr) {
-		h.log.Warn("drop login action due to source mismatch", "action", act, "hdr_source", hdr.SourceID())
+		h.log.Warn("drop login action due to source mismatch", "action", msg.Action, "hdr_source", hdr.SourceID())
 		return
 	}
 	entry.Handle(ctx, conn, hdr, msg.Data)
 }
 
 func (h *LoginHandler) initActions() {
-	h.actions = make(map[string]core.SubProcessAction)
+	h.ResetActions()
 	for _, act := range registerRegisterActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
 	for _, act := range registerLoginActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
 	for _, act := range registerRevokeActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
 	for _, act := range registerAssistQueryActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
 	for _, act := range registerOfflineActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
 	for _, act := range registerPermActions(h) {
-		h.registerAction(act)
+		h.RegisterAction(act)
 	}
-}
-
-func (h *LoginHandler) registerAction(a core.SubProcessAction) {
-	if a == nil || a.Name() == "" {
-		return
-	}
-	h.actions[strings.ToLower(a.Name())] = a
 }
