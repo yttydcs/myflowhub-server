@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/subproto"
@@ -28,30 +30,59 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 	}
 	if a.assisted {
 		rec, ok := a.h.lookup(req.DeviceID)
-		if !ok || rec.Credential != req.Credential {
-			a.h.sendResp(ctx, conn, hdr, actionAssistLoginResp, respData{Code: 4001, Msg: "invalid credential"})
+		if (!ok || len(rec.PubKey) == 0) && a.h.selectAuthority(ctx) != nil {
+			// 向上查询公钥
+			a.h.setPending(req.DeviceID, conn.ID())
+			a.h.forward(ctx, a.h.selectAuthority(ctx), actionAssistQueryCred, queryCredData{DeviceID: req.DeviceID, NodeID: req.NodeID})
 			return
+		}
+		valid := false
+		if ok && len(rec.PubKey) > 0 && strings.EqualFold(strings.TrimSpace(req.Alg), defaultAlgES256) && strings.TrimSpace(req.Sig) != "" {
+			if pub, err := parseECPubKeyRaw(rec.PubKey); err == nil {
+				valid = verifyEcdsaSig(pub, loginSignBytes(req), req.Sig)
+			}
+		}
+		if !ok || !valid {
+			a.h.sendResp(ctx, conn, hdr, actionAssistLoginResp, respData{Code: 4001, Msg: "invalid signature"})
+			return
+		}
+		if len(rec.PubKey) > 0 {
+			conn.SetMeta("pubkey", rec.PubKey)
 		}
 		a.h.addRouteIndex(ctx, rec.NodeID, conn)
 		a.h.sendResp(ctx, conn, hdr, actionAssistLoginResp, respData{
-			Code:       1,
-			Msg:        "ok",
-			DeviceID:   req.DeviceID,
-			NodeID:     rec.NodeID,
-			HubID:      localNodeID(ctx),
-			Credential: rec.Credential,
+			Code:     1,
+			Msg:      "ok",
+			DeviceID: req.DeviceID,
+			NodeID:   rec.NodeID,
+			HubID:    localNodeID(ctx),
+			PubKey:   base64.StdEncoding.EncodeToString(rec.PubKey),
+			NodePub:  base64.StdEncoding.EncodeToString(rec.PubKey),
 		})
+		go a.h.sendUpLogin(ctx, conn, req.DeviceID, rec.NodeID, rec.PubKey, req.Sig, req.Alg, req.TS, req.Nonce)
 		return
 	}
 	// local check
 	if rec, ok := a.h.lookup(req.DeviceID); ok {
-		if rec.Credential == req.Credential {
-			a.h.saveBinding(ctx, conn, req.DeviceID, rec.NodeID, rec.Credential)
-			a.h.applyHubID(ctx, conn, localNodeID(ctx))
-			a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, HubID: localNodeID(ctx), Credential: rec.Credential})
+		if len(rec.PubKey) == 0 && a.h.selectAuthority(ctx) != nil {
+			a.h.setPending(req.DeviceID, conn.ID())
+			a.h.forward(ctx, a.h.selectAuthority(ctx), actionAssistQueryCred, queryCredData{DeviceID: req.DeviceID, NodeID: req.NodeID})
 			return
 		}
-		a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid credential"})
+		valid := false
+		if len(rec.PubKey) > 0 && strings.EqualFold(strings.TrimSpace(req.Alg), defaultAlgES256) && strings.TrimSpace(req.Sig) != "" {
+			if pub, err := parseECPubKeyRaw(rec.PubKey); err == nil {
+				valid = verifyEcdsaSig(pub, loginSignBytes(req), req.Sig)
+			}
+		}
+		if valid {
+			a.h.saveBinding(ctx, conn, req.DeviceID, rec.NodeID, rec.PubKey)
+			a.h.applyHubID(ctx, conn, localNodeID(ctx))
+			a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, HubID: localNodeID(ctx), PubKey: base64.StdEncoding.EncodeToString(rec.PubKey), NodePub: base64.StdEncoding.EncodeToString(rec.PubKey)})
+			go a.h.sendUpLogin(ctx, conn, req.DeviceID, rec.NodeID, rec.PubKey, req.Sig, req.Alg, req.TS, req.Nonce)
+			return
+		}
+		a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
 		return
 	}
 	// not found locally, try authority
@@ -61,7 +92,7 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 		a.h.forward(ctx, authority, actionAssistLogin, req)
 		return
 	}
-	a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid credential"})
+	a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
 }
 
 type loginRespAction struct {
@@ -69,7 +100,7 @@ type loginRespAction struct {
 	h *LoginHandler
 }
 
-func (a *loginRespAction) Name() string      { return actionLoginResp }
+func (a *loginRespAction) Name() string { return actionLoginResp }
 func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
 	var resp respData
 	if err := json.Unmarshal(data, &resp); err != nil {
@@ -88,9 +119,19 @@ func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core
 	}
 	if c, found := srv.ConnManager().Get(connID); found {
 		if resp.Code == 1 {
-			a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
+			var pubRaw []byte
+			if pk := strings.TrimSpace(resp.PubKey); pk != "" {
+				if _, raw, err := parseECPubKey(pk); err == nil {
+					pubRaw = raw
+				}
+			}
+			a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
 			a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
 			a.h.applyHubID(ctx, c, resp.HubID)
+			if strings.TrimSpace(resp.PubKey) != "" {
+				a.h.addTrustedNode(resp.NodeID, resp.PubKey)
+			}
+			// 此分支没有原始 device 签名，避免上行；由实际验证节点负责上报
 		}
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()

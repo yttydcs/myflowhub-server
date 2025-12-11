@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
@@ -93,9 +94,85 @@ func (h *LoginHandler) addRouteIndex(ctx context.Context, nodeID uint32, conn co
 	}
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		if cm := srv.ConnManager(); cm != nil {
+			if !h.canAddRoute(ctx, nodeID, metaPubKey(conn)) {
+				return
+			}
 			cm.AddNodeIndex(nodeID, conn)
 		}
 	}
+}
+
+func (h *LoginHandler) lookupTrustedNodePub(nodeID uint32, conn core.IConnection) *ecdsa.PublicKey {
+	if nodeID == 0 {
+		return nil
+	}
+	if raw, ok := h.trustedNode[nodeID]; ok && len(raw) > 0 {
+		if pub, err := parseECPubKeyRaw(raw); err == nil {
+			return pub
+		}
+	}
+	// 尝试从连接元数据获取
+	if conn != nil {
+		if v, ok := conn.GetMeta("node_pubkey"); ok {
+			if b, ok2 := v.([]byte); ok2 && len(b) > 0 {
+				if pub, err := parseECPubKeyRaw(b); err == nil {
+					return pub
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// canAddRoute 检查同 nodeID 是否已存在不同公钥的路由，防止占用。
+func (h *LoginHandler) canAddRoute(ctx context.Context, nodeID uint32, newPub []byte) bool {
+	if nodeID == 0 {
+		return false
+	}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return true
+	}
+	cm := srv.ConnManager()
+	if cm == nil {
+		return true
+	}
+	existing, ok := cm.GetByNode(nodeID)
+	if !ok || existing == nil {
+		return true
+	}
+	oldPub := metaPubKey(existing)
+	if len(oldPub) == 0 || len(newPub) == 0 {
+		return true
+	}
+	if len(oldPub) == len(newPub) {
+		match := true
+		for i := range oldPub {
+			if oldPub[i] != newPub[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	if h.log != nil {
+		h.log.Warn("reject route update due to pubkey conflict", "node", nodeID)
+	}
+	return false
+}
+
+func metaPubKey(conn core.IConnection) []byte {
+	if conn == nil {
+		return nil
+	}
+	if v, ok := conn.GetMeta("pubkey"); ok {
+		if b, ok2 := v.([]byte); ok2 {
+			return b
+		}
+	}
+	return nil
 }
 
 func (h *LoginHandler) removeRouteIndex(ctx context.Context, nodeID uint32) {

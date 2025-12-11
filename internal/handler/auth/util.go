@@ -25,6 +25,17 @@ func parseUint32(v string) (uint32, error) {
 	return uint32(u), nil
 }
 
+func uintToString(v uint32) string {
+	if v == 0 {
+		return "0"
+	}
+	return strconv.FormatUint(uint64(v), 10)
+}
+
+func int64ToString(v int64) string {
+	return strconv.FormatInt(v, 10)
+}
+
 // Errors placeholder
 var (
 	ErrInvalidAction = errors.New("invalid action")

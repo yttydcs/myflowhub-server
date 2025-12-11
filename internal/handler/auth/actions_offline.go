@@ -26,7 +26,7 @@ func (a *offlineAction) Handle(ctx context.Context, conn core.IConnection, _ cor
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
 		return
 	}
-	a.h.removeBinding(req.DeviceID, "")
+	a.h.removeBinding(req.DeviceID)
 	a.h.removeIndexes(ctx, req.NodeID, conn)
 	if !a.assisted {
 		// forward to parent

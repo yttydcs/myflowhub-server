@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/subproto"
@@ -49,9 +50,18 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 		return
 	}
 	if c, found := srv.ConnManager().Get(connID); found {
-		a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
+		var pubRaw []byte
+		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
+			if _, raw, err := parseECPubKey(pk); err == nil {
+				pubRaw = raw
+			}
+		}
+		a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
 		a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
 		a.h.applyHubID(ctx, c, resp.HubID)
+		if strings.TrimSpace(resp.NodePub) != "" {
+			a.h.addTrustedNode(resp.NodeID, resp.NodePub)
+		}
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
@@ -73,19 +83,35 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 		h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid register data"})
 		return
 	}
+	if strings.TrimSpace(req.PubKey) == "" && strings.TrimSpace(h.nodePubB64) != "" {
+		req.PubKey = h.nodePubB64
+	}
+	req.NodePub = req.PubKey
+	var pubRaw []byte
+	if strings.TrimSpace(req.PubKey) != "" {
+		if _, raw, err := parseECPubKey(req.PubKey); err != nil {
+			h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid pubkey"})
+			return
+		} else {
+			pubRaw = raw
+		}
+	}
 	if assisted {
 		// being processed at authority
 		nodeID := h.ensureNodeID(req.DeviceID)
-		cred := h.ensureCredential(req.DeviceID)
 		h.addRouteIndex(ctx, nodeID, conn)
+		if strings.TrimSpace(req.PubKey) != "" {
+			h.addTrustedNode(nodeID, req.PubKey)
+		}
 		h.sendResp(ctx, conn, hdr, actionAssistRegisterResp, respData{
-			Code:       1,
-			Msg:        "ok",
-			DeviceID:   req.DeviceID,
-			NodeID:     nodeID,
-			Credential: cred,
-			Role:       h.resolveRole(nodeID),
-			Perms:      h.resolvePerms(nodeID),
+			Code:     1,
+			Msg:      "ok",
+			DeviceID: req.DeviceID,
+			NodeID:   nodeID,
+			Role:     h.resolveRole(nodeID),
+			Perms:    h.resolvePerms(nodeID),
+			PubKey:   req.PubKey,
+			NodePub:  req.PubKey,
 		})
 		return
 	}
@@ -97,18 +123,21 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	}
 	// self authority
 	nodeID := h.ensureNodeID(req.DeviceID)
-	cred := h.ensureCredential(req.DeviceID)
-	h.saveBinding(ctx, conn, req.DeviceID, nodeID, cred)
+	h.saveBinding(ctx, conn, req.DeviceID, nodeID, pubRaw)
 	h.applyHubID(ctx, conn, localNodeID(ctx))
+	if strings.TrimSpace(req.PubKey) != "" {
+		h.addTrustedNode(nodeID, req.PubKey)
+	}
 	h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{
-		Code:       1,
-		Msg:        "ok",
-		DeviceID:   req.DeviceID,
-		NodeID:     nodeID,
-		HubID:      localNodeID(ctx),
-		Credential: cred,
-		Role:       h.resolveRole(nodeID),
-		Perms:      h.resolvePerms(nodeID),
+		Code:     1,
+		Msg:      "ok",
+		DeviceID: req.DeviceID,
+		NodeID:   nodeID,
+		HubID:    localNodeID(ctx),
+		Role:     h.resolveRole(nodeID),
+		Perms:    h.resolvePerms(nodeID),
+		PubKey:   req.PubKey,
+		NodePub:  req.PubKey,
 	})
 }
 
@@ -129,9 +158,18 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 		return
 	}
 	if c, found := srv.ConnManager().Get(connID); found {
-		h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, resp.Credential)
+		var pubRaw []byte
+		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
+			if _, raw, err := parseECPubKey(pk); err == nil {
+				pubRaw = raw
+			}
+		}
+		h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
 		h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
 		h.applyHubID(ctx, c, resp.HubID)
+		if strings.TrimSpace(resp.PubKey) != "" {
+			h.addTrustedNode(resp.NodeID, resp.PubKey)
+		}
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}

@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -25,7 +28,10 @@ type LoginHandler struct {
 
 	authNode uint32
 
-	permCfg *permission.Config
+	permCfg     *permission.Config
+	nodePriv    *ecdsa.PrivateKey
+	nodePubB64  string
+	trustedNode map[uint32][]byte
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -41,9 +47,52 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 		whitelist:   make(map[string]bindingRecord),
 		pendingConn: make(map[string]string),
 	}
+	// load node keys & trusted nodes
+	if cfg != nil {
+		if priv, pub, err := loadOrCreateNodeKeys(cfg); err == nil {
+			h.nodePriv = priv
+			h.nodePubB64 = pub
+		}
+		h.trustedNode = loadTrustedNodes(cfg)
+	}
 	h.loadAuthConfig(cfg)
 	h.nextID.Store(2)
 	return h
+}
+
+func (h *LoginHandler) addTrustedNode(nodeID uint32, pubB64 string) {
+	if nodeID == 0 || strings.TrimSpace(pubB64) == "" {
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pubB64))
+	if err != nil || len(raw) == 0 {
+		return
+	}
+	h.mu.Lock()
+	if h.trustedNode == nil {
+		h.trustedNode = make(map[uint32][]byte)
+	}
+	existing, ok := h.trustedNode[nodeID]
+	same := ok && len(existing) == len(raw)
+	if same {
+		for i := range existing {
+			if existing[i] != raw[i] {
+				same = false
+				break
+			}
+		}
+	}
+	if same {
+		h.mu.Unlock()
+		return
+	}
+	h.trustedNode[nodeID] = raw
+	snapshot := make(map[uint32][]byte, len(h.trustedNode))
+	for k, v := range h.trustedNode {
+		snapshot[k] = v
+	}
+	h.mu.Unlock()
+	saveTrustedNodesFile(snapshot)
 }
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
@@ -92,6 +141,9 @@ func (h *LoginHandler) initActions() {
 		h.RegisterAction(act)
 	}
 	for _, act := range registerPermActions(h) {
+		h.RegisterAction(act)
+	}
+	for _, act := range registerUpLoginActions(h) {
 		h.RegisterAction(act)
 	}
 }

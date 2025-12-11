@@ -2,22 +2,23 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 )
 
-func (h *LoginHandler) saveBinding(ctx context.Context, conn core.IConnection, deviceID string, nodeID uint32, cred string) {
+func (h *LoginHandler) saveBinding(ctx context.Context, conn core.IConnection, deviceID string, nodeID uint32, pubKey []byte) {
 	role, perms := h.resolveRolePerms(nodeID)
 	h.mu.Lock()
-	h.whitelist[deviceID] = bindingRecord{NodeID: nodeID, Credential: cred, Role: role, Perms: perms}
+	h.whitelist[deviceID] = bindingRecord{NodeID: nodeID, Role: role, Perms: perms, PubKey: cloneSlice(pubKey)}
 	h.mu.Unlock()
 	conn.SetMeta("nodeID", nodeID)
 	conn.SetMeta("deviceID", deviceID)
 	conn.SetMeta("role", role)
 	conn.SetMeta("perms", perms)
+	if len(pubKey) > 0 {
+		conn.SetMeta("pubkey", pubKey)
+	}
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		if cm := srv.ConnManager(); cm != nil {
 			cm.UpdateNodeIndex(nodeID, conn)
@@ -39,18 +40,14 @@ func (h *LoginHandler) applyHubID(ctx context.Context, conn core.IConnection, hu
 	}
 }
 
-func (h *LoginHandler) removeBinding(deviceID, cred string) (removed bool, mismatch bool) {
+func (h *LoginHandler) removeBinding(deviceID string) (removed bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	rec, ok := h.whitelist[deviceID]
-	if !ok {
-		return false, false
-	}
-	if cred != "" && rec.Credential != cred {
-		return false, true
+	if _, ok := h.whitelist[deviceID]; !ok {
+		return false
 	}
 	delete(h.whitelist, deviceID)
-	return true, false
+	return true
 }
 
 func (h *LoginHandler) removeIndexes(ctx context.Context, nodeID uint32, conn core.IConnection) {
@@ -102,23 +99,6 @@ func (h *LoginHandler) ensureNodeID(deviceID string) uint32 {
 	h.mu.RUnlock()
 	next := h.nextID.Add(1) - 1
 	return next
-}
-
-func (h *LoginHandler) ensureCredential(deviceID string) string {
-	h.mu.RLock()
-	if rec, ok := h.whitelist[deviceID]; ok && rec.Credential != "" {
-		h.mu.RUnlock()
-		return rec.Credential
-	}
-	h.mu.RUnlock()
-	token := generateCredential()
-	return token
-}
-
-func generateCredential() string {
-	buf := make([]byte, 32)
-	_, _ = rand.Read(buf)
-	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
 func (h *LoginHandler) sourceMatches(conn core.IConnection, hdr core.IHeader) bool {
