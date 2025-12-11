@@ -6,12 +6,14 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
+	"github.com/yttydcs/myflowhub-core/eventbus"
 )
 
 type stubServer struct {
 	nodeID uint32
 	cm     core.IConnectionManager
 	sends  []sendCall
+	bus    eventbus.IBus
 }
 
 type sendCall struct {
@@ -27,6 +29,12 @@ func (s *stubServer) Process() core.IProcess               { return nil }
 func (s *stubServer) HeaderCodec() core.IHeaderCodec       { return nil }
 func (s *stubServer) NodeID() uint32                       { return s.nodeID }
 func (s *stubServer) UpdateNodeID(id uint32)               { s.nodeID = id }
+func (s *stubServer) EventBus() eventbus.IBus {
+	if s.bus == nil {
+		s.bus = eventbus.New(eventbus.Options{})
+	}
+	return s.bus
+}
 func (s *stubServer) Send(_ context.Context, connID string, hdr core.IHeader, _ []byte) error {
 	s.sends = append(s.sends, sendCall{connID: connID, target: hdr.TargetID()})
 	return nil

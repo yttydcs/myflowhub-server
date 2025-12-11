@@ -9,6 +9,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
+	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
@@ -352,6 +353,7 @@ func (c *authConn) SendWithHeader(h core.IHeader, payload []byte, _ core.IHeader
 type authServer struct {
 	nodeID uint32
 	cm     core.IConnectionManager
+	bus    eventbus.IBus
 }
 
 func newAuthServer(nodeID uint32, cm core.IConnectionManager) *authServer {
@@ -366,6 +368,12 @@ func (s *authServer) Process() core.IProcess               { return nil }
 func (s *authServer) HeaderCodec() core.IHeaderCodec       { return header.HeaderTcpCodec{} }
 func (s *authServer) NodeID() uint32                       { return s.nodeID }
 func (s *authServer) UpdateNodeID(id uint32)               { s.nodeID = id }
+func (s *authServer) EventBus() eventbus.IBus {
+	if s.bus == nil {
+		s.bus = eventbus.New(eventbus.Options{})
+	}
+	return s.bus
+}
 func (s *authServer) Send(_ context.Context, connID string, hdr core.IHeader, payload []byte) error {
 	if c, ok := s.cm.Get(connID); ok {
 		return c.SendWithHeader(hdr, payload, header.HeaderTcpCodec{})

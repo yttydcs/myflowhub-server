@@ -9,6 +9,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
+	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
@@ -55,6 +56,7 @@ type recordServer struct {
 	cm     core.IConnectionManager
 	cfg    core.IConfig
 	sent   []sentFrame
+	bus    eventbus.IBus
 }
 
 func newRecordServer(nodeID uint32, cm core.IConnectionManager) *recordServer {
@@ -73,6 +75,12 @@ func (s *recordServer) Process() core.IProcess               { return nil }
 func (s *recordServer) HeaderCodec() core.IHeaderCodec       { return header.HeaderTcpCodec{} }
 func (s *recordServer) NodeID() uint32                       { return s.nodeID }
 func (s *recordServer) UpdateNodeID(id uint32)               { s.nodeID = id }
+func (s *recordServer) EventBus() eventbus.IBus {
+	if s.bus == nil {
+		s.bus = eventbus.New(eventbus.Options{})
+	}
+	return s.bus
+}
 func (s *recordServer) Send(_ context.Context, connID string, hdr core.IHeader, payload []byte) error {
 	s.sent = append(s.sent, sentFrame{hdr: hdr, payload: payload})
 	if c, ok := s.cm.Get(connID); ok {
