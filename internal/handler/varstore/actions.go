@@ -14,7 +14,7 @@ type varAction struct {
 	fn   func(context.Context, core.IConnection, core.IHeader, json.RawMessage)
 }
 
-func (a varAction) Name() string                     { return a.name }
+func (a varAction) Name() string { return a.name }
 func (a varAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	a.fn(ctx, conn, hdr, data)
 }
@@ -33,11 +33,11 @@ func registerVarActions(h *VarStoreHandler) []core.SubProcessAction {
 		varAction{name: varActionAssistSetResp, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
 			h.handleSetResp(ctx, data)
 		}},
-		varAction{name: varActionUpSet, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-			h.handleUpSet(ctx, data)
+		varAction{name: varActionUpSet, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleUpSet(ctx, hdr, data)
 		}},
-		varAction{name: varActionNotifySet, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-			h.handleNotifySet(ctx, data)
+		varAction{name: varActionNotifySet, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleNotifySet(ctx, hdr, data)
 		}},
 
 		varAction{name: varActionGet, fn: func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
@@ -78,11 +78,37 @@ func registerVarActions(h *VarStoreHandler) []core.SubProcessAction {
 		varAction{name: varActionAssistRevokeResp, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
 			h.handleRevokeResp(ctx, data)
 		}},
-		varAction{name: varActionUpRevoke, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-			h.handleUpRevoke(ctx, data)
+		varAction{name: varActionUpRevoke, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleUpRevoke(ctx, hdr, data)
 		}},
-		varAction{name: varActionNotifyRevoke, fn: func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-			h.handleNotifyRevoke(ctx, data)
+		varAction{name: varActionNotifyRevoke, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleNotifyRevoke(ctx, hdr, data)
+		}},
+
+		varAction{name: varActionSubscribe, fn: func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleSubscribe(ctx, conn, hdr, data, false)
+		}},
+		varAction{name: varActionAssistSubscribe, fn: func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleSubscribe(ctx, conn, hdr, data, true)
+		}},
+		varAction{name: varActionSubscribeResp, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleSubscribeResp(ctx, hdr, data)
+		}},
+		varAction{name: varActionAssistSubscribeResp, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleSubscribeResp(ctx, hdr, data)
+		}},
+		varAction{name: varActionUnsubscribe, fn: func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleUnsubscribe(ctx, conn, hdr, data, false)
+		}},
+		varAction{name: varActionAssistUnsubscribe, fn: func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleUnsubscribe(ctx, conn, hdr, data, true)
+		}},
+
+		varAction{name: varActionVarChanged, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleVarChanged(ctx, hdr, data)
+		}},
+		varAction{name: varActionVarDeleted, fn: func(ctx context.Context, _ core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleVarDeleted(ctx, hdr, data)
 		}},
 	}
 }

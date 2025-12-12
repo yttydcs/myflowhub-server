@@ -34,6 +34,13 @@ func chooseRevokeResp(assisted bool) string {
 	return varActionRevokeResp
 }
 
+func chooseSubscribeResp(assisted bool) string {
+	if assisted {
+		return varActionAssistSubscribeResp
+	}
+	return varActionSubscribeResp
+}
+
 func firstNonZero(a, b uint32) uint32 {
 	if a != 0 {
 		return a

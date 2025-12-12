@@ -19,6 +19,8 @@ VarStore 协议（SubProto=3）新规范
 - 请求方 -> 直接父节点：`set/get/list/revoke`（原始指令）。
 - 父节点向上协助：`assist_set/assist_get/assist_list/assist_revoke`。
 - 仅 set、revoke 有 `_up`（祖先链缓存同步）：`up_set/up_revoke`。
+- 订阅/退订：`subscribe/assist_subscribe/subscribe_resp/assist_subscribe_resp`；退订 `unsubscribe/assist_unsubscribe`（可选返回 subscribe_resp）。
+- 变更广播：`var_changed`（包含 name/owner/value/visibility/type）、`var_deleted`（仅 name/owner）。
 - 响应：`set_resp/get_resp/list_resp/revoke_resp`（以及 assist_*_resp）。  
 - 通知 owner：`notify_set`、`notify_revoke`（Cmd 帧，途经链路尽量缓存）。
 - 示例：
@@ -38,7 +40,7 @@ VarStore 协议（SubProto=3）新规范
 处理与链路规则
 --------------
 - 判定子树：用路由表/连接索引 + localID 判断 owner 是否在当前子树（包含自己）。
-- 权限：关键执行节点（通常是请求方与 owner 的最近公共祖先，或更上层拥有完整信息的节点）做 `var.private_set` / `var.revoke` 判定，不提前拒绝。
+- 权限：关键执行节点（通常是请求方与 owner 的最近公共祖先，或更上层拥有完整信息的节点）做 `var.private_set` / `var.revoke` / `var.subscribe` 判定，不提前拒绝。
 - set/revoke（修改类）：
   1) 请求方 -> 直接父：发送 `set`/`revoke`（Target=父）。
   2) 父节点查子树是否含 owner。若否且有父：向上发 `assist_*`；若无父仍未找到，回 `*_resp` not found 给请求方。
@@ -49,6 +51,15 @@ VarStore 协议（SubProto=3）新规范
   2) 父若子树含 owner 且本地有缓存：直接回 `*_resp`（Target=requester）。若未缓存（即便在子树）或不在子树且有父：向上 `assist_*`；无父则回 not found。
   3) 上层收到 `assist_*` 重复步骤 2。无 `_up`。
 - 缓存策略：请求方是否缓存自定；`up_*` 与 `notify_*` 路径上的节点尽量缓存；`*_resp` 不强制缓存。
+
+订阅/变更推送
+--------------
+- 订阅载荷：`{"name":"...","owner":N}`，owner 必填；订阅者节点为请求帧的 SourceID（assist_* 场景沿用原订阅者）。  
+- 权限：公共变量无限制；私有变量需订阅者=owner 或具备 `var.subscribe` 权限。
+- 存在性：订阅必须命中真实变量。若本地未命中，沿父链 `assist_subscribe` 逐级向上，根节点最终返回 `*_subscribe_resp`（code=1/4 等）；收到 code=1 后逐级记录订阅。
+- 退订：`unsubscribe/assist_unsubscribe`，连接断开会自动退订；当本地及子节点均无订阅者时自动向上 `assist_unsubscribe`。
+- 触发源：`up_set`、关键节点发送的 `notify_set`、`up_revoke`、`notify_revoke` 会触发变更通知；owner 的专有 notify 仍保留，订阅推送不重复发送给 owner。
+- 变更广播：关键节点向已订阅的子节点发送 `var_changed`；收到后同样向下游订阅者转发（不回原来源链路）。可见性从 public 变 private 视为删除，发送 `var_deleted` 并清理订阅。撤销时发送 `var_deleted` 并自动退订。
 
 错误码约定
 ----------

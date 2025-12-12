@@ -27,6 +27,16 @@ const (
 	varActionUpRevoke         = "up_revoke"
 	varActionNotifyRevoke     = "notify_revoke"
 
+	varActionSubscribe           = "subscribe"
+	varActionAssistSubscribe     = "assist_subscribe"
+	varActionSubscribeResp       = "subscribe_resp"
+	varActionAssistSubscribeResp = "assist_subscribe_resp"
+	varActionUnsubscribe         = "unsubscribe"
+	varActionAssistUnsubscribe   = "assist_unsubscribe"
+
+	varActionVarChanged = "var_changed"
+	varActionVarDeleted = "var_deleted"
+
 	visibilityPublic  = "public"
 	visibilityPrivate = "private"
 )
@@ -51,6 +61,12 @@ type getReq struct {
 
 type listReq struct {
 	Owner uint32 `json:"owner,omitempty"`
+}
+
+type subscribeReq struct {
+	Name       string `json:"name"`
+	Owner      uint32 `json:"owner"`
+	Subscriber uint32 `json:"subscriber,omitempty"`
 }
 
 type varResp struct {
@@ -79,8 +95,19 @@ type pendingKey struct {
 }
 
 const (
-	pendingKindGet    = "get"
-	pendingKindList   = "list"
-	pendingKindSet    = "set"
-	pendingKindRevoke = "revoke"
+	pendingKindGet       = "get"
+	pendingKindList      = "list"
+	pendingKindSet       = "set"
+	pendingKindRevoke    = "revoke"
+	pendingKindSubscribe = "subscribe"
 )
+
+type pendingSubscriber struct {
+	connID     string
+	subscriber uint32
+}
+
+type connClosedEvent struct {
+	ConnID string
+	NodeID uint32
+}
