@@ -32,6 +32,8 @@ type LoginHandler struct {
 	nodePriv    *ecdsa.PrivateKey
 	nodePubB64  string
 	trustedNode map[uint32][]byte
+
+	disablePersist bool
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -47,16 +49,35 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 		whitelist:   make(map[string]bindingRecord),
 		pendingConn: make(map[string]string),
 	}
-	// load node keys & trusted nodes
+	if cfg != nil {
+		if v, _ := cfg.Get("auth.disable_persist"); strings.EqualFold(strings.TrimSpace(v), "true") {
+			h.disablePersist = true
+		}
+	}
+	// load node keys & trusted/bindings
 	if cfg != nil {
 		if priv, pub, err := loadOrCreateNodeKeys(cfg); err == nil {
 			h.nodePriv = priv
 			h.nodePubB64 = pub
 		}
-		h.trustedNode = loadTrustedNodes(cfg)
+		if !h.disablePersist {
+			if wl, trusted, maxNode := loadTrustedBindings(cfg); len(wl) > 0 || len(trusted) > 0 {
+				if len(wl) > 0 {
+					h.whitelist = wl
+				}
+				if len(trusted) > 0 {
+					h.trustedNode = trusted
+				}
+				if maxNode >= 2 {
+					h.nextID.Store(maxNode + 1)
+				}
+			}
+		}
 	}
 	h.loadAuthConfig(cfg)
-	h.nextID.Store(2)
+	if h.nextID.Load() < 2 {
+		h.nextID.Store(2)
+	}
 	return h
 }
 
@@ -87,12 +108,8 @@ func (h *LoginHandler) addTrustedNode(nodeID uint32, pubB64 string) {
 		return
 	}
 	h.trustedNode[nodeID] = raw
-	snapshot := make(map[uint32][]byte, len(h.trustedNode))
-	for k, v := range h.trustedNode {
-		snapshot[k] = v
-	}
 	h.mu.Unlock()
-	saveTrustedNodesFile(snapshot)
+	h.persistState()
 }
 
 func (h *LoginHandler) SubProto() uint8 { return 2 }
@@ -104,7 +121,6 @@ func (h *LoginHandler) Init() bool {
 
 // AllowSourceMismatch 登录阶段允许 SourceID 与连接元数据不一致（尚未绑定 nodeID）。
 func (h *LoginHandler) AllowSourceMismatch() bool { return true }
-
 func (h *LoginHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
 	var msg message
 	if err := json.Unmarshal(payload, &msg); err != nil {

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
@@ -28,6 +27,18 @@ const (
 type nodeKeys struct {
 	PrivKey string `json:"privkey"` // base64 DER
 	PubKey  string `json:"pubkey"`  // base64 DER
+}
+
+type bindingPersist struct {
+	NodeID uint32   `json:"node_id"`
+	PubKey string   `json:"pubkey,omitempty"`
+	Role   string   `json:"role,omitempty"`
+	Perms  []string `json:"perms,omitempty"`
+}
+
+type trustedFile struct {
+	Bindings map[string]bindingPersist  `json:"bindings,omitempty"` // deviceID -> binding
+	Meta     map[string]json.RawMessage `json:"meta,omitempty"`     // reserved
 }
 
 // loadOrCreateNodeKeys 加载节点密钥，若不存在则生成并写入文件与配置。
@@ -63,6 +74,92 @@ func loadOrCreateNodeKeys(cfg core.IConfig) (*ecdsa.PrivateKey, string, error) {
 	return priv, pubB64, nil
 }
 
+// loadTrustedBindings 读取 trusted_nodes 文件，将 bindings 注入 whitelist，同时补足 trusted 节点。
+// 返回 whitelist、trusted 映射，以及文件中出现的最大 NodeID。
+func loadTrustedBindings(cfg core.IConfig) (map[string]bindingRecord, map[uint32][]byte, uint32) {
+	path := filepath.Clean(trustedNodesFile)
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return nil, nil, 0
+	}
+	var tf trustedFile
+	if err := json.Unmarshal(data, &tf); err != nil {
+		return nil, nil, 0
+	}
+	whitelist := make(map[string]bindingRecord)
+	trusted := make(map[uint32][]byte)
+	var maxNode uint32
+
+	// bindings: device -> {node_id, pubkey, role, perms}
+	for dev, entry := range tf.Bindings {
+		dev = strings.TrimSpace(dev)
+		if dev == "" || entry.NodeID == 0 {
+			continue
+		}
+		var pubRaw []byte
+		if strings.TrimSpace(entry.PubKey) != "" {
+			if _, raw, err := parseECPubKey(entry.PubKey); err == nil {
+				pubRaw = raw
+				if _, ok := trusted[entry.NodeID]; !ok {
+					trusted[entry.NodeID] = raw
+				}
+			}
+		}
+		rec := bindingRecord{
+			NodeID: entry.NodeID,
+			Role:   entry.Role,
+			Perms:  cloneSlice(entry.Perms),
+			PubKey: cloneSlice(pubRaw),
+		}
+		whitelist[dev] = rec
+		if entry.NodeID > maxNode {
+			maxNode = entry.NodeID
+		}
+	}
+
+	// flatten trusted to cfg (legacy usage)
+	if cfg != nil && len(trusted) > 0 {
+		strMap := make(map[uint32]string, len(trusted))
+		for id, raw := range trusted {
+			strMap[id] = base64.StdEncoding.EncodeToString(raw)
+		}
+		buf, _ := json.Marshal(strMap)
+		cfg.Set(confTrustedNodesKey, string(buf))
+	}
+	return whitelist, trusted, maxNode
+}
+
+// saveTrustedBindings 将 whitelist 与 trusted map 持久化到同一文件。
+func saveTrustedBindings(bindings map[string]bindingRecord, trusted map[uint32][]byte) {
+	path := filepath.Clean(trustedNodesFile)
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+
+	tf := trustedFile{
+		Bindings: make(map[string]bindingPersist),
+	}
+
+	for dev, rec := range bindings {
+		dev = strings.TrimSpace(dev)
+		if dev == "" || rec.NodeID == 0 {
+			continue
+		}
+		entry := bindingPersist{
+			NodeID: rec.NodeID,
+			Role:   rec.Role,
+			Perms:  cloneSlice(rec.Perms),
+		}
+		if len(rec.PubKey) > 0 {
+			entry.PubKey = base64.StdEncoding.EncodeToString(rec.PubKey)
+		} else if raw, ok := trusted[rec.NodeID]; ok && len(raw) > 0 {
+			entry.PubKey = base64.StdEncoding.EncodeToString(raw)
+		}
+		tf.Bindings[dev] = entry
+	}
+
+	data, _ := json.MarshalIndent(tf, "", "  ")
+	_ = os.WriteFile(path, data, 0o600)
+}
+
 func parsePrivKey(b64 string) (*ecdsa.PrivateKey, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
 	if err != nil {
@@ -94,47 +191,4 @@ func writeNodeKeysFile(k nodeKeys) error {
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	data, _ := json.MarshalIndent(k, "", "  ")
 	return os.WriteFile(path, data, 0o600)
-}
-
-// loadTrustedNodes 读取 config/trusted_nodes.json 并写入 cfg。
-func loadTrustedNodes(cfg core.IConfig) map[uint32][]byte {
-	path := filepath.Clean(trustedNodesFile)
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) == 0 {
-		return nil
-	}
-	tmp := make(map[string]string)
-	_ = json.Unmarshal(data, &tmp)
-	out := make(map[uint32][]byte)
-	for k, v := range tmp {
-		if id, err := parseUint32(k); err == nil {
-			if pk, err := base64.StdEncoding.DecodeString(strings.TrimSpace(v)); err == nil {
-				out[id] = pk
-			}
-		}
-	}
-	// flatten to cfg as json string for sharing
-	if len(out) > 0 {
-		strMap := make(map[uint32]string)
-		for id, raw := range out {
-			strMap[id] = base64.StdEncoding.EncodeToString(raw)
-		}
-		buf, _ := json.Marshal(strMap)
-		cfg.Set(confTrustedNodesKey, string(buf))
-	}
-	return out
-}
-
-func saveTrustedNodesFile(m map[uint32][]byte) {
-	path := filepath.Clean(trustedNodesFile)
-	_ = os.MkdirAll(filepath.Dir(path), 0o755)
-	tmp := make(map[string]string)
-	for id, raw := range m {
-		if id == 0 || len(raw) == 0 {
-			continue
-		}
-		tmp[strconv.FormatUint(uint64(id), 10)] = base64.StdEncoding.EncodeToString(raw)
-	}
-	data, _ := json.MarshalIndent(tmp, "", "  ")
-	_ = os.WriteFile(path, data, 0o600)
 }

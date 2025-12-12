@@ -382,6 +382,9 @@ func (s *authServer) Send(_ context.Context, connID string, hdr core.IHeader, pa
 }
 
 func newLoginHandlerForTest(cfg core.IConfig) *auth.LoginHandler {
+	if cfg != nil {
+		cfg.Set("auth.disable_persist", "true")
+	}
 	h := auth.NewLoginHandlerWithConfig(cfg, nil)
 	h.Init()
 	return h

@@ -99,6 +99,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	if assisted {
 		// being processed at authority
 		nodeID := h.ensureNodeID(req.DeviceID)
+		h.saveBinding(ctx, conn, req.DeviceID, nodeID, pubRaw)
 		h.addRouteIndex(ctx, nodeID, conn)
 		if strings.TrimSpace(req.PubKey) != "" {
 			h.addTrustedNode(nodeID, req.PubKey)
@@ -113,6 +114,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 			PubKey:   req.PubKey,
 			NodePub:  req.PubKey,
 		})
+		h.persistState()
 		return
 	}
 	authority := h.selectAuthority(ctx)
@@ -139,6 +141,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 		PubKey:   req.PubKey,
 		NodePub:  req.PubKey,
 	})
+	h.persistState()
 }
 
 func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMessage) {
@@ -174,5 +177,6 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 			resp.HubID = srv.NodeID()
 		}
 		h.sendResp(ctx, c, nil, actionRegisterResp, resp)
+		h.persistState()
 	}
 }

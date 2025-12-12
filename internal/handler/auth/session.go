@@ -115,3 +115,30 @@ func (h *LoginHandler) sourceMatches(conn core.IConnection, hdr core.IHeader) bo
 	}
 	return hdr.SourceID() == nid
 }
+
+// persistState 持久化 whitelist 与 trustedNode。
+func (h *LoginHandler) persistState() {
+	h.mu.RLock()
+	bindings := make(map[string]bindingRecord, len(h.whitelist))
+	for dev, rec := range h.whitelist {
+		bindings[dev] = bindingRecord{
+			NodeID: rec.NodeID,
+			Role:   rec.Role,
+			Perms:  cloneSlice(rec.Perms),
+			PubKey: cloneSlice(rec.PubKey),
+		}
+	}
+	trusted := make(map[uint32][]byte, len(h.trustedNode)+len(bindings))
+	for id, pk := range h.trustedNode {
+		trusted[id] = cloneSlice(pk)
+	}
+	for _, rec := range bindings {
+		if rec.NodeID != 0 && len(rec.PubKey) > 0 {
+			if _, ok := trusted[rec.NodeID]; !ok {
+				trusted[rec.NodeID] = cloneSlice(rec.PubKey)
+			}
+		}
+	}
+	h.mu.RUnlock()
+	saveTrustedBindings(bindings, trusted)
+}
