@@ -1,4 +1,2 @@
-config/trusted_nodes.json
-config/node_keys.json
-tests/config/node_keys.json
-tests/config/trusted_nodes.json
+**/config/trusted_nodes.json
+**/config/node_keys.json
