@@ -1,111 +1,83 @@
-auth/Register 协议（SubProto=2，P2P 统一 action+data）
-==================================
+auth 协议（SubProto=2，基于 P256 公钥签名）
+==========================================
 
-基本约定
---------
-- 所有消息（请求/响应）统一格式：`{"action": "<name>", "data": {...}}`，状态码放在 data 内；响应 action = `<request_action>_resp`。认证/认证成功时响应附带 `role`（单值）与 `perms`（字符串数组）；未找到节点则返回空 `role/perms`。
-- 未认证设备 `SourceID=0`；仅子协议 2 在未认证状态放行，其余 `SourceID=0` 帧直接丢弃。
-- 注册必须由直连 Hub 代发（携带 device_id）为 assist_register 上送权威。
-- 权威节点选择：配置指定权威 nodeID 优先；否则有父则默认父为权威（逐级可达祖先）；无父则本级处理。
-- 凭证只下发给设备和直连 Hub；父/祖先不缓存凭证。
-- 撤销（revoke）采用广播：仅当找到并删除凭证时返回 revoke_resp，未找到静默不回；凭证不匹配可回错误。
-
-凭证
-----
-- 生成：32 字节随机数，base64url 无填充（约 43 字符）。
-- 绑定：`device_id` + `node_id` + `credential` 保存在直连 Hub 白名单；设备端保存 credential。
-- 无过期；通过 revoke 主动失效，可未来扩展序列号/版本。
-
-消息格式（JSON）
-----------------
-```json
-{
-  "action": "<action_name>",
-  "data": { ... }
-}
-```
-
-### 请求 / data 字段
-- `register` / `assist_register`: `{ "device_id": "..." }`
-- `auth` / `assist_auth`: `{ "device_id": "...", "credential": "..." }`
-- `revoke`: `{ "device_id": "...", "node_id": N, "credential": "..." }`
-- `assist_query_credential`（可选）: `{ "device_id": "...", "node_id": N }`
-- `offline` / `assist_offline`: `{ "device_id": "...", "node_id": N, "reason": "optional" }`
-- `get_perms`（新）: `{ "node_id": N }` 查询指定节点角色/权限
-- `list_roles`（新）: `{ "offset": 0, "limit": 100, "role": "optional", "node_ids": [N1,N2] }`，查询已知节点角色/权限列表（支持分页与过滤）
-- `perms_invalidate`（新）: `{ "node_ids": [N1, N2], "reason": "optional", "refresh": false }` 权限失效通知（node_ids 为空表示全量；`refresh=true` 表示可主动上行刷新）
-
-### 响应 / data 字段（action = `<req>_resp`）
-- `register_resp` / `assist_register_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "hub_id": <local_hub>, "credential": "...", "role": "...", "perms": ["..."] }`
-- `auth_resp` / `assist_auth_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "hub_id": <local_hub>, "credential": "...", "role": "...", "perms": ["..."] }`
-- `revoke_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N }`
-- `assist_query_credential_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N, "credential": "..." }`
-- `get_perms_resp`（新）: `{ "code": 1|err, "msg": "...", "node_id": N, "role": "...", "perms": ["..."] }`
-- `list_roles_resp`（新）: `{ "code": 1|err, "msg": "...", "total": <int>, "roles": [ { "node_id": N, "role": "...", "perms": ["..."] }, ... ] }`
-- `offline_resp` / `assist_offline_resp`: `{ "code": 1|err, "msg": "...", "device_id": "...", "node_id": N }`
-
-流程
-----
-1) 注册：设备→直连 Hub 发 `register`；直连 Hub 依据权威规则上送 `assist_register`。权威分配 node_id、生成 credential，回 `assist_register_resp`。直连 Hub 保存白名单，回设备 `register_resp`，更新索引。
-2) 认证：设备提交 device_id+credential；直连 Hub 本地白名单验证通过才回 `auth_resp`。若本地无凭证，可向上发 `assist_query_credential`（若实现）获取并缓存后完成认证。
-3) 撤销：管理/权威发 `revoke`（含 device_id，建议带 node_id/credential）。广播传播；直连 Hub 找到并删除时回 `revoke_resp`（code=1），未找到静默；凭证不匹配可回 4402。可选断开连接。
-4) 离线认证：直连 Hub 缓存白名单后，在失去父节点时仍可认证；注册仍需按权威规则上送。
-5) 设备离线：设备或直连 Hub 发送 `offline`，直连 Hub 删除本地 node/device 索引，向父发送 `assist_offline` 逐级移除；成功移除时回 `offline_resp`/`assist_offline_resp`。
-
-发送与过滤
+范围与格式
 ----------
-- `SourceID=0` 仅当 SubProto=2 放行；其他直接丢弃。
-- 路由规则：核心层将 `TargetID=0` 视为“广播给所有子节点（不回父）”；不要将 0 作为“上送父节点”。需要上送父/权威时，应显式填写父节点的 NodeID；需要对所有子节点下发（如 revoke 广播、perms_invalidate）可使用 `TargetID=0`。
-- 凭证仅本地验证；父链主要路由 assist*/revoke/offline/query。
-- 权威选择：配置优先；否则默认父；无父则本级。
+- 仅描述当前 `internal/handler/auth` 的实现；不包含 login_server 旧 credential 流程。
+- 消息统一格式：`{"action":"<name>","data":{...}}`，响应 action = `<req>_resp`，状态码在 data.code。
+- 签名算法：ES256（P256 + SHA256），公钥/私钥 DER 以 base64 编码。
+- SubProto 固定 2；未认证连接 `SourceID=0` 仅放行子协议 2，其余丢弃。
 
-权限失效通知（perms_invalidate）
--------------------------------
-- 动作：`perms_invalidate`，data: `{ "node_ids": [N1, N2], "reason": "optional", "refresh": false }`；`node_ids` 为空表示全量失效。
-- 处理：各 Hub 清空对应节点的 role/perms 缓存；如需，可向子节点继续广播（target=0，不回父）。当 `refresh=true` 时，接收端可对列出的 node_id 主动上行 `get_perms` 进行刷新（空列表时建议仅失效，不触发全量刷新）。
+头部与路由规则
+--------------
+- TargetID=0 仅表示“向子节点广播，不回父”，**不**表示上送；上送父/权威需写明 NodeID。
+- Major：命令/状态类用 `MajorCmd`；响应可用 `MajorOKResp`。
+- 权威选择：优先配置 `authority.node_id`，否则父链接；无父则本地即权威。
 
-错误码建议（data.code/msg）
---------------------------
+密钥与持久化
+------------
+- 节点密钥：启动时从 `config/node_keys.json` 读取/生成（字段 `privkey`、`pubkey`，base64 DER），并写入配置键 `auth.node_priv_key`、`auth.node_pub_key`。
+- 信任/白名单：`config/trusted_nodes.json`
+  - `bindings`: device_id -> `{node_id,pubkey,role,perms}`，注入 whitelist。
+  - `meta`: 预留。
+ 读取时注入 whitelist 与 trusted 节点公钥；持久化时同步写回缺失的 trusted 公钥。
+
+动作与数据字段
+-------------
+- register / assist_register  
+  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`（缺省 pubkey 会填本节点公钥）。  
+  - resp: `{"code","msg,omitempty","device_id","node_id","hub_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`
+- login / assist_login  
+  - req: `{"device_id","node_id,omitempty","ts","nonce","sig","alg"}`，需 ES256 签名。  
+  - resp: 同 register_resp，失败 code=4001。
+- assist_query_credential / _resp  
+  - req: `{"device_id","node_id,omitempty"}`  
+  - resp: `{"code","msg,omitempty","device_id","node_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty"}`
+- up_login / up_login_resp  
+  - req: `upLoginData` 字段：`node_id,device_id,hub_id,pubkey,ts,nonce,device_ts,device_nonce,device_sig,device_alg,sender_id,sender_ts,sender_nonce,sender_sig,sender_alg,sender_pub,alg`。  
+  - 校验：设备签名有效；发送节点签名有效且为信任节点或携带合法公钥；路由公钥冲突则拒绝。
+- revoke  
+  - req: `{"device_id","node_id,omitempty"}`；需权限 `auth.revoke`。  
+  - resp: 仅删除命中时回 `{"code":1,"device_id","node_id"}`；否则静默。向上下行广播同一动作（除来源）。
+- offline / assist_offline  
+  - req: `{"device_id","node_id,omitempty","reason,omitempty"}`；无响应。移除绑定与路由索引，向父转发 assist_offline。
+- 权限与角色  
+  - get_perms / _resp: `{"node_id"}` → `{"code","msg,omitempty","node_id","role","perms"}`。  
+  - list_roles / _resp: `{"offset,omitempty","limit,omitempty","role,omitempty","node_ids,omitempty"}` → `{"code","msg,omitempty","total","roles":[{node_id,role,perms}]}`。  
+  - perms_invalidate: `{"node_ids,omitempty","reason,omitempty","refresh,omitempty"}`；清缓存，可选触发上行刷新；向子节点广播（target=0）。  
+  - perms_snapshot: 下发/广播权限快照（结构见 core/permission.Snapshot）。
+
+核心流程
+--------
+- 注册：本地权威或 assist_register 上送权威分配 node_id；保存 whitelist/路由/信任公钥，返回 register_resp/assist_register_resp。
+- 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
+- 权限：角色/权限来自配置与白名单；perms_invalidate 清缓存并可刷新；perms_snapshot 应用后广播下行。
+- 撤销：校验权限→删除绑定→回 resp（仅命中）→广播 revoke 上下行。
+- 下线：删除绑定与索引；向父 assist_offline；无响应。
+
+错误码（data.code）
+-------------------
 - 1：成功
-- 认证/注册失败：4001 未注册/凭证不匹配；4002 无法访问权威/协助失败；4500 内部错误。
-- 撤销失败：4401 未找到白名单；4402 凭证不匹配/已更新；4500 内部错误。
-- 下线失败：4701 未找到索引；4700 内部错误。
-- 权限相关：4404 未找到节点/权限；权限不足建议返回 403。
+- 400：参数非法
+- 4001：未找到 / 签名不匹配 / 未注册
+- 4403：权限不足（revoke 等）
+- 4500：内部错误（预留）
 
-配置键（角色/权限）
-------------------
-- `auth.default_role`：默认角色名，默认 `node`。
-- `auth.default_perms`：默认权限列表（逗号分隔），默认空。
-- `auth.node_roles`：静态 node_id→role 映射，如 `1:admin;2:node`。
-- `auth.role_perms`：角色→权限列表映射，如 `admin:p1,p2;node:p3`。
+配置键
+------
+- 权威/持久化：`authority.node_id`，`auth.disable_persist`（true 不读写 trusted_nodes），`auth.node_priv_key`，`auth.node_pub_key`，`auth.trusted_nodes`（JSON map，由文件填充）。
+- 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:admin;2:node`），`auth.role_perms`（例 `admin:p1,p2;node:p3`）。
 
 示例
 ----
-注册请求  
-```json
-{"action":"register","data":{"device_id":"mac-001122334455"}}
-```
-注册成功响应  
-```json
-{"action":"register_resp","data":{"code":1,"msg":"ok","node_id":5,"hub_id":2,"device_id":"mac-001122334455","credential":"base64url_random_token"}}
-```
-认证请求  
-```json
-{"action":"auth","data":{"device_id":"mac-001122334455","credential":"base64url_random_token"}}
-```
-认证失败响应  
-```json
-{"action":"auth_resp","data":{"code":4001,"msg":"invalid credential"}}
-```
-撤销请求（广播）  
-```json
-{"action":"revoke","data":{"device_id":"mac-001122334455","node_id":5,"credential":"base64url_random_token"}}
-```
-撤销响应（仅找到并取消时返回）  
-```json
-{"action":"revoke_resp","data":{"code":1,"msg":"ok","device_id":"mac-001122334455","node_id":5}}
-```
-下线请求,不用响应
-```json
-{"action":"offline","data":{"device_id":"mac-001122334455","node_id":5,"reason":"client disconnect"}}
-```
+- 注册请求：`{"action":"register","data":{"device_id":"mac-001122334455","pubkey":"<base64 DER EC 公钥>"}}`
+- 注册响应：`{"action":"register_resp","data":{"code":1,"msg":"ok","device_id":"mac-001122334455","node_id":5,"hub_id":2,"pubkey":"<...>","node_pub":"<...>"}}`
+- 登录请求：`{"action":"login","data":{"device_id":"mac-001122334455","ts":1700000000,"nonce":"n1","sig":"<ES256>","alg":"ES256"}}`
+- 撤销请求：`{"action":"revoke","data":{"device_id":"mac-001122334455","node_id":5}}`
+- 权限失效广播：`{"action":"perms_invalidate","data":{"node_ids":[5,6],"refresh":true}}`
+
+集成提示
+--------
+- Target=0 只向子节点广播，不会上送父；上送权威必须写明目标 NodeID。
+- 登录/注册均需 P256 DER 公钥 + ES256 签名；缺公钥先用 assist_query_credential 获取。
+- 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。**
