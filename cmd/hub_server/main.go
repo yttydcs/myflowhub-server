@@ -21,6 +21,7 @@ import (
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 	"github.com/yttydcs/myflowhub-server/internal/handler/management"
+	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
 	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 )
 
@@ -79,6 +80,10 @@ func main() {
 	}
 	if err := dispatcher.RegisterHandler(varstore.NewVarStoreHandlerWithConfig(cfg, log)); err != nil {
 		log.Error("register varstore handler failed", "err", err)
+		os.Exit(1)
+	}
+	if err := dispatcher.RegisterHandler(topicbus.NewTopicBusHandlerWithConfig(cfg, log)); err != nil {
+		log.Error("register topicbus handler failed", "err", err)
 		os.Exit(1)
 	}
 	dispatcher.RegisterDefaultHandler(handler.NewDefaultForwardHandler(cfg, log))
