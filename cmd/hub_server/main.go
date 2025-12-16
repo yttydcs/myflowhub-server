@@ -155,13 +155,13 @@ func defaultOptions() options {
 		parentAddr:         getenv("HUB_PARENT_ADDR", ""),
 		parentEnable:       core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
 		parentReconnectSec: int(getenvInt("HUB_PARENT_RECONNECT", 3)),
-		procChannels:       int(getenvInt("HUB_PROC_CHANNELS", 2)),
-		procWorkers:        int(getenvInt("HUB_PROC_WORKERS", 2)),
-		procBuffer:         int(getenvInt("HUB_PROC_BUFFER", 128)),
-		sendChannels:       int(getenvInt("HUB_SEND_CHANNELS", 1)),
-		sendWorkers:        int(getenvInt("HUB_SEND_WORKERS", 1)),
-		sendChannelBuffer:  int(getenvInt("HUB_SEND_CHANNEL_BUFFER", 64)),
-		sendConnBuffer:     int(getenvInt("HUB_SEND_CONN_BUFFER", 64)),
+		procChannels:       int(getenvInt("HUB_PROC_CHANNELS", 4)),
+		procWorkers:        int(getenvInt("HUB_PROC_WORKERS", 8)),
+		procBuffer:         int(getenvInt("HUB_PROC_BUFFER", 256)),
+		sendChannels:       int(getenvInt("HUB_SEND_CHANNELS", 2)),
+		sendWorkers:        int(getenvInt("HUB_SEND_WORKERS", 2)),
+		sendChannelBuffer:  int(getenvInt("HUB_SEND_CHANNEL_BUFFER", 128)),
+		sendConnBuffer:     int(getenvInt("HUB_SEND_CONN_BUFFER", 128)),
 	}
 }
 
