@@ -20,6 +20,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
 	"github.com/yttydcs/myflowhub-server/internal/handler/management"
 	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
 	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
@@ -38,6 +39,10 @@ type options struct {
 	sendWorkers        int
 	sendChannelBuffer  int
 	sendConnBuffer     int
+	authDefaultRole    string
+	authDefaultPerms   string
+	authNodeRoles      string
+	authRolePerms      string
 }
 
 func main() {
@@ -54,6 +59,10 @@ func main() {
 	flag.IntVar(&opts.sendWorkers, "send-workers", opts.sendWorkers, "send dispatcher workers per channel")
 	flag.IntVar(&opts.sendChannelBuffer, "send-channel-buffer", opts.sendChannelBuffer, "send dispatcher channel buffer")
 	flag.IntVar(&opts.sendConnBuffer, "send-conn-buffer", opts.sendConnBuffer, "per-connection send buffer")
+	flag.StringVar(&opts.authDefaultRole, "auth-default-role", opts.authDefaultRole, "default role for nodes")
+	flag.StringVar(&opts.authDefaultPerms, "auth-default-perms", opts.authDefaultPerms, "default perms (comma separated)")
+	flag.StringVar(&opts.authNodeRoles, "auth-node-roles", opts.authNodeRoles, "node roles mapping, e.g. 1:admin;2:node")
+	flag.StringVar(&opts.authRolePerms, "auth-role-perms", opts.authRolePerms, "role perms mapping, e.g. admin:p1,p2;node:p3")
 	flag.Parse()
 
 	if opts.parentAddr != "" {
@@ -84,6 +93,10 @@ func main() {
 	}
 	if err := dispatcher.RegisterHandler(topicbus.NewTopicBusHandlerWithConfig(cfg, log)); err != nil {
 		log.Error("register topicbus handler failed", "err", err)
+		os.Exit(1)
+	}
+	if err := dispatcher.RegisterHandler(filehandler.NewHandlerWithConfig(cfg, log)); err != nil {
+		log.Error("register file handler failed", "err", err)
 		os.Exit(1)
 	}
 	dispatcher.RegisterDefaultHandler(handler.NewDefaultForwardHandler(cfg, log))
@@ -144,6 +157,10 @@ func buildConfig(opts options) core.IConfig {
 		config.KeySendChannelBuffer:    strconv.Itoa(opts.sendChannelBuffer),
 		config.KeySendConnBuffer:       strconv.Itoa(opts.sendConnBuffer),
 		config.KeyRoutingForwardRemote: "true",
+		config.KeyAuthDefaultRole:      strings.TrimSpace(opts.authDefaultRole),
+		config.KeyAuthDefaultPerms:     strings.TrimSpace(opts.authDefaultPerms),
+		config.KeyAuthNodeRoles:        strings.TrimSpace(opts.authNodeRoles),
+		config.KeyAuthRolePerms:        strings.TrimSpace(opts.authRolePerms),
 	}
 	return config.NewMap(data)
 }
@@ -162,6 +179,11 @@ func defaultOptions() options {
 		sendWorkers:        int(getenvInt("HUB_SEND_WORKERS", 2)),
 		sendChannelBuffer:  int(getenvInt("HUB_SEND_CHANNEL_BUFFER", 128)),
 		sendConnBuffer:     int(getenvInt("HUB_SEND_CONN_BUFFER", 128)),
+		authDefaultRole:    getenv("HUB_AUTH_DEFAULT_ROLE", "node"),
+		authDefaultPerms:   getenv("HUB_AUTH_DEFAULT_PERMS", ""),
+		authNodeRoles:      getenv("HUB_AUTH_NODE_ROLES", ""),
+		// 默认给 node 角色开放 file 协议读写权限（可用 HUB_AUTH_ROLE_PERMS 覆盖）
+		authRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write"),
 	}
 }
 

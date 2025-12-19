@@ -14,7 +14,26 @@
    - SubProto=2：直接放行 dispatcher。
    - target==0：广播给子节点（不回父），返回 false。不要将 0 作为“上送父节点”。
    - target!=local：按节点索引/父链转发，返回 false（子协议 handler 不会执行）。
+     - **例外（file 控制帧）**：`SubProto=5` 且 `payload[0]==0x01`（CTRL）且**来自子连接**时，不做自动转发，返回 true 进入 handler（用于逐级判权/转交，避免绕过）。
    - target==local：返回 true，交给 Dispatcher 调用子协议。
+
+SourceID 一致性校验（Dispatcher.sourceMismatch）
+-----------------------------------------------
+- Dispatcher 在进入子协议 handler 前，会进行一次 `SourceID` 一致性校验（可被 handler 覆盖）。
+- 目的：避免连接伪造任意 `SourceID`（在树形网络里用于权限、审计、路由一致性等）。
+- 例外：登录/注册等阶段可能尚未绑定 nodeID，相关 handler 可通过 `AllowSourceMismatch()=true` 放行。
+
+推荐校验规则（拟全局生效）
+------------------------
+> 该规则用于支持“端到端 SourceID 穿越多跳”（例如文件传输 DATA/ACK 直达目标、控制帧上送 LCA 判权）。
+
+- 若 `handler.AllowSourceMismatch()==true`：跳过校验（保持现有行为）。
+- 否则要求连接已登录：`conn.meta(nodeID)!=0`。
+- 若 `hdr.SourceID == conn.meta(nodeID)`：放行（最常见的逐跳发送）。
+- 否则根据连接角色：
+  - `role=parent`：放行（子节点无条件信任父节点；父节点可代表子树下发控制/缓存）。
+  - `role=child`：仅当 `ConnManager.GetByNode(hdr.SourceID)` 映射到该连接时放行（`SourceID` 为该子连接背后的后代节点）。
+- 依赖：登录协议需要把“后代 nodeID → 该 child 连接”的索引逐级同步到祖先节点（例如 `up_login`）。
 
 发送链路（TX Pipeline）
 ----------------------
@@ -37,8 +56,10 @@
 
 Major 与子协议处理
 ------------------
-- 框架未对 `MajorCmd/MajorMsg` 做额外分支，路由决策主要依赖 target/subproto。Cmd 帧 target!=local 时默认也会被 PreRouting 转发，不会进 handler。
-- 若需要 Cmd 帧逐跳解析，需在 PreRouting/Dispatcher 特殊处理（如指定 SubProto 的 Cmd 先进 handler 再转发），或在 handler 内自行构造转发逻辑（保留 SourceID、调整 Target）。
+- 框架未对 `MajorCmd/MajorMsg` 做“控制帧/数据帧”的强绑定：路由决策主要依赖 `TargetID/SubProto`。
+- `MajorCmd/MajorMsg` 更多是**中间节点处理建议**（是否建议进入 handler/用于缓存、审计等），具体协议仍可在 payload 内定义自身的帧类型。
+  - 例：`file` 协议约定用 `payload[0]` 的 `kind` 区分 CTRL/DATA/ACK。
+- `Cmd` 帧 `TargetID!=local` 时默认会被 PreRouting 转发，不会进 handler；若希望“逐跳可见/逐跳缓存”，可让对应 handler 实现 `AcceptCmd()=true`，在 PreRoute 已转发的情况下仍本地处理一次。
 
 注册与分发
 ----------
