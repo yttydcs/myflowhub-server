@@ -20,7 +20,9 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	exechandler "github.com/yttydcs/myflowhub-server/internal/handler/exec"
 	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
+	flowhandler "github.com/yttydcs/myflowhub-server/internal/handler/flow"
 	"github.com/yttydcs/myflowhub-server/internal/handler/management"
 	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
 	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
@@ -95,6 +97,16 @@ func main() {
 		log.Error("register topicbus handler failed", "err", err)
 		os.Exit(1)
 	}
+	execH := exechandler.NewHandlerWithConfig(cfg, log)
+	if err := dispatcher.RegisterHandler(execH); err != nil {
+		log.Error("register exec handler failed", "err", err)
+		os.Exit(1)
+	}
+	flowH := flowhandler.NewHandlerWithConfig(cfg, log)
+	if err := dispatcher.RegisterHandler(flowH); err != nil {
+		log.Error("register flow handler failed", "err", err)
+		os.Exit(1)
+	}
 	if err := dispatcher.RegisterHandler(filehandler.NewHandlerWithConfig(cfg, log)); err != nil {
 		log.Error("register file handler failed", "err", err)
 		os.Exit(1)
@@ -130,6 +142,7 @@ func main() {
 		log.Error("start server failed", "err", err)
 		os.Exit(1)
 	}
+	flowH.BindServer(srv)
 	log.Info("hub server started", "addr", opts.addr, "node_id", opts.nodeID, "parent", opts.parentAddr)
 
 	waitSignal()
@@ -182,8 +195,8 @@ func defaultOptions() options {
 		authDefaultRole:    getenv("HUB_AUTH_DEFAULT_ROLE", "node"),
 		authDefaultPerms:   getenv("HUB_AUTH_DEFAULT_PERMS", ""),
 		authNodeRoles:      getenv("HUB_AUTH_NODE_ROLES", ""),
-		// 默认给 node 角色开放 file 协议读写权限（可用 HUB_AUTH_ROLE_PERMS 覆盖）
-		authRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write"),
+		// 默认给 node 角色开放 file/flow/exec 权限（可用 HUB_AUTH_ROLE_PERMS 覆盖）
+		authRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write,flow.set,exec.call"),
 	}
 }
 
