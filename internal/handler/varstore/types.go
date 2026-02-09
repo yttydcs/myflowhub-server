@@ -1,84 +1,52 @@
 package varstore
 
-import "encoding/json"
+import protocol "github.com/yttydcs/myflowhub-server/protocol/varstore"
 
 const (
-	varActionSet           = "set"
-	varActionAssistSet     = "assist_set"
-	varActionSetResp       = "set_resp"
-	varActionAssistSetResp = "assist_set_resp"
-	varActionUpSet         = "up_set"
-	varActionNotifySet     = "notify_set"
+	varActionSet           = protocol.ActionSet
+	varActionAssistSet     = protocol.ActionAssistSet
+	varActionSetResp       = protocol.ActionSetResp
+	varActionAssistSetResp = protocol.ActionAssistSetResp
+	varActionUpSet         = protocol.ActionUpSet
+	varActionNotifySet     = protocol.ActionNotifySet
 
-	varActionGet           = "get"
-	varActionAssistGet     = "assist_get"
-	varActionGetResp       = "get_resp"
-	varActionAssistGetResp = "assist_get_resp"
+	varActionGet           = protocol.ActionGet
+	varActionAssistGet     = protocol.ActionAssistGet
+	varActionGetResp       = protocol.ActionGetResp
+	varActionAssistGetResp = protocol.ActionAssistGetResp
 
-	varActionList           = "list"
-	varActionAssistList     = "assist_list"
-	varActionListResp       = "list_resp"
-	varActionAssistListResp = "assist_list_resp"
+	varActionList           = protocol.ActionList
+	varActionAssistList     = protocol.ActionAssistList
+	varActionListResp       = protocol.ActionListResp
+	varActionAssistListResp = protocol.ActionAssistListResp
 
-	varActionRevoke           = "revoke"
-	varActionAssistRevoke     = "assist_revoke"
-	varActionRevokeResp       = "revoke_resp"
-	varActionAssistRevokeResp = "assist_revoke_resp"
-	varActionUpRevoke         = "up_revoke"
-	varActionNotifyRevoke     = "notify_revoke"
+	varActionRevoke           = protocol.ActionRevoke
+	varActionAssistRevoke     = protocol.ActionAssistRevoke
+	varActionRevokeResp       = protocol.ActionRevokeResp
+	varActionAssistRevokeResp = protocol.ActionAssistRevokeResp
+	varActionUpRevoke         = protocol.ActionUpRevoke
+	varActionNotifyRevoke     = protocol.ActionNotifyRevoke
 
-	varActionSubscribe           = "subscribe"
-	varActionAssistSubscribe     = "assist_subscribe"
-	varActionSubscribeResp       = "subscribe_resp"
-	varActionAssistSubscribeResp = "assist_subscribe_resp"
-	varActionUnsubscribe         = "unsubscribe"
-	varActionAssistUnsubscribe   = "assist_unsubscribe"
+	varActionSubscribe           = protocol.ActionSubscribe
+	varActionAssistSubscribe     = protocol.ActionAssistSubscribe
+	varActionSubscribeResp       = protocol.ActionSubscribeResp
+	varActionAssistSubscribeResp = protocol.ActionAssistSubscribeResp
+	varActionUnsubscribe         = protocol.ActionUnsubscribe
+	varActionAssistUnsubscribe   = protocol.ActionAssistUnsubscribe
 
-	varActionVarChanged = "var_changed"
-	varActionVarDeleted = "var_deleted"
+	varActionVarChanged = protocol.ActionVarChanged
+	varActionVarDeleted = protocol.ActionVarDeleted
 
-	visibilityPublic  = "public"
-	visibilityPrivate = "private"
+	visibilityPublic  = protocol.VisibilityPublic
+	visibilityPrivate = protocol.VisibilityPrivate
 )
 
-type varMessage struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
-
-type setReq struct {
-	Name       string `json:"name"`
-	Value      string `json:"value"`
-	Visibility string `json:"visibility"`
-	Type       string `json:"type,omitempty"`
-	Owner      uint32 `json:"owner,omitempty"`
-}
-
-type getReq struct {
-	Name  string `json:"name"`
-	Owner uint32 `json:"owner,omitempty"`
-}
-
-type listReq struct {
-	Owner uint32 `json:"owner,omitempty"`
-}
-
-type subscribeReq struct {
-	Name       string `json:"name"`
-	Owner      uint32 `json:"owner"`
-	Subscriber uint32 `json:"subscriber,omitempty"`
-}
-
-type varResp struct {
-	Code       int      `json:"code"`
-	Msg        string   `json:"msg,omitempty"`
-	Name       string   `json:"name,omitempty"`
-	Value      string   `json:"value,omitempty"`
-	Owner      uint32   `json:"owner,omitempty"`
-	Visibility string   `json:"visibility,omitempty"`
-	Type       string   `json:"type,omitempty"`
-	Names      []string `json:"names,omitempty"`
-}
+type varMessage = protocol.Message
+type setReq = protocol.SetReq
+type getReq = protocol.GetReq
+type listReq = protocol.ListReq
+type subscribeReq = protocol.SubscribeReq
+type varResp = protocol.VarResp
 
 type varRecord struct {
 	Value      string

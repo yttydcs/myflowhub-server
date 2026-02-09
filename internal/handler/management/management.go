@@ -10,9 +10,6 @@ import (
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 )
 
-// 子协议：管理指令，仅处理发往本节点的 action+data JSON。
-const SubProtoManagement uint8 = 1
-
 type ManagementHandler struct {
 	subproto.ActionBaseSubProcess
 	log *slog.Logger

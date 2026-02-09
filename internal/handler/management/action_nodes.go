@@ -14,7 +14,7 @@ type listNodesAction struct {
 	h *ManagementHandler
 }
 
-func (a *listNodesAction) Name() string      { return "list_nodes" }
+func (a *listNodesAction) Name() string      { return actionListNodes }
 func (a *listNodesAction) RequireAuth() bool { return false }
 func (a *listNodesAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	srv := core.ServerFromContext(ctx)
@@ -22,7 +22,7 @@ func (a *listNodesAction) Handle(ctx context.Context, conn core.IConnection, hdr
 		return
 	}
 	nodes := enumerateDirectNodes(srv.ConnManager())
-	a.h.sendActionResp(ctx, conn, hdr, "list_nodes_resp", listNodesResp{Code: 1, Msg: "ok", Nodes: nodes})
+	a.h.sendActionResp(ctx, conn, hdr, actionListNodesResp, listNodesResp{Code: 1, Msg: "ok", Nodes: nodes})
 }
 
 // list_subtree: 返回本节点 + 直接连接的节点（最佳努力子树）
@@ -31,7 +31,7 @@ type listSubtreeAction struct {
 	h *ManagementHandler
 }
 
-func (a *listSubtreeAction) Name() string      { return "list_subtree" }
+func (a *listSubtreeAction) Name() string      { return actionListSubtree }
 func (a *listSubtreeAction) RequireAuth() bool { return false }
 func (a *listSubtreeAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, _ json.RawMessage) {
 	srv := core.ServerFromContext(ctx)
@@ -41,7 +41,7 @@ func (a *listSubtreeAction) Handle(ctx context.Context, conn core.IConnection, h
 	nodes := enumerateDirectNodes(srv.ConnManager())
 	// 包含自身
 	nodes = append(nodes, nodeInfo{NodeID: srv.NodeID(), HasChildren: len(nodes) > 0})
-	a.h.sendActionResp(ctx, conn, hdr, "list_subtree_resp", listSubtreeResp{Code: 1, Msg: "ok", Nodes: nodes})
+	a.h.sendActionResp(ctx, conn, hdr, actionListSubtreeResp, listSubtreeResp{Code: 1, Msg: "ok", Nodes: nodes})
 }
 
 func enumerateDirectNodes(cm core.IConnectionManager) []nodeInfo {
