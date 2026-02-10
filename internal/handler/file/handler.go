@@ -256,7 +256,14 @@ func (h *Handler) routeCtrlRequest(
 			sendErr(404, "not found")
 			return
 		}
-		h.sendToConn(ctx, parent, header.CloneToTCP(hdr).WithTargetID(target), payload)
+		fwdHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			sendErr(500, "hop limit exceeded")
+			h.log.Warn("drop ctrl frame due to hop_limit", "target", target, "source", hdr.SourceID())
+			return
+		}
+		fwdHdr.WithTargetID(target)
+		h.sendToConn(ctx, parent, fwdHdr, payload)
 		return
 	}
 
@@ -267,7 +274,14 @@ func (h *Handler) routeCtrlRequest(
 			sendErr(500, "invalid route")
 			return
 		}
-		h.sendToConn(ctx, requesterConn, header.CloneToTCP(hdr).WithTargetID(nextNode), payload)
+		fwdHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			sendErr(500, "hop limit exceeded")
+			h.log.Warn("drop ctrl frame due to hop_limit", "target", nextNode, "source", hdr.SourceID())
+			return
+		}
+		fwdHdr.WithTargetID(nextNode)
+		h.sendToConn(ctx, requesterConn, fwdHdr, payload)
 		return
 	}
 
@@ -276,7 +290,14 @@ func (h *Handler) routeCtrlRequest(
 		sendErr(403, "permission denied")
 		return
 	}
-	h.sendToConn(ctx, targetConn, header.CloneToTCP(hdr).WithTargetID(target), payload)
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		sendErr(500, "hop limit exceeded")
+		h.log.Warn("drop ctrl frame due to hop_limit", "target", target, "source", hdr.SourceID())
+		return
+	}
+	fwdHdr.WithTargetID(target)
+	h.sendToConn(ctx, targetConn, fwdHdr, payload)
 }
 
 func (h *Handler) hasPermission(nodeID uint32, perm string) bool {
@@ -316,7 +337,13 @@ func (h *Handler) forwardCtrlEnd(ctx context.Context, hdr core.IHeader, payload 
 	if next == nil {
 		return
 	}
-	h.sendToConn(ctx, next, header.CloneToTCP(hdr).WithTargetID(target), payload)
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.log.Warn("drop ctrl frame due to hop_limit", "target", target, "source", hdr.SourceID())
+		return
+	}
+	fwdHdr.WithTargetID(target)
+	h.sendToConn(ctx, next, fwdHdr, payload)
 }
 
 func (h *Handler) sendToConn(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {

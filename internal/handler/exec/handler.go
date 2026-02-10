@@ -83,12 +83,59 @@ func (h *Handler) OnReceive(ctx context.Context, conn core.IConnection, hdr core
 		h.log.Warn("exec invalid payload", "err", err)
 		return
 	}
+	// call_resp 属于“返回路径”，应按 header.TargetID 逐跳转发到 executor。
+	if msg.Action == actionCallResp {
+		if h.forwardRemoteByHeaderTarget(ctx, conn, hdr, payload) {
+			return
+		}
+	}
 	entry, ok := h.LookupAction(msg.Action)
 	if !ok {
+		// 兼容：未知 action 且 target!=local 时，仍按 TargetID 做逐跳转发（可能是新版本指令或返回帧）。
+		if h.forwardRemoteByHeaderTarget(ctx, conn, hdr, payload) {
+			return
+		}
 		h.log.Debug("unknown exec action", "action", msg.Action)
 		return
 	}
 	entry.Handle(ctx, conn, hdr, msg.Data)
+}
+
+func (h *Handler) forwardRemoteByHeaderTarget(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) bool {
+	if hdr == nil || len(payload) == 0 {
+		return false
+	}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil || srv.ConnManager() == nil {
+		return false
+	}
+	target := hdr.TargetID()
+	if target == 0 || target == srv.NodeID() {
+		return false
+	}
+
+	var next core.IConnection
+	if c, ok := srv.ConnManager().GetByNode(target); ok && c != nil {
+		next = c
+	} else {
+		next = findParentConn(srv.ConnManager())
+	}
+	if next == nil {
+		h.log.Warn("drop exec frame: no route", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	if isParentConn(conn) && isParentConn(next) {
+		h.log.Warn("drop exec frame due to invalid route (came from parent)", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.log.Warn("drop exec frame due to hop_limit", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	fwdHdr.WithTargetID(target)
+	h.sendToConn(ctx, next, fwdHdr, payload)
+	return true
 }
 
 func (h *Handler) handleCall(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
@@ -149,7 +196,12 @@ func (h *Handler) handleCall(ctx context.Context, conn core.IConnection, hdr cor
 			return
 		}
 		// 上送必须让父节点进入 handler：TargetID=父节点自身
-		upHdr := header.CloneToTCP(hdr).WithTargetID(parentNode)
+		upHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.sendCallResp(ctx, hdr, CallResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", ExecutorNode: req.ExecutorNode, TargetNode: req.TargetNode, Method: req.Method})
+			return
+		}
+		upHdr.WithTargetID(parentNode)
 		h.sendToConn(ctx, parent, upHdr, payloadFrom(message{Action: actionCall, Data: mustJSON(req)}))
 		return
 	}
@@ -162,7 +214,12 @@ func (h *Handler) handleCall(ctx context.Context, conn core.IConnection, hdr cor
 			h.sendCallResp(ctx, hdr, CallResp{ReqID: req.ReqID, Code: 500, Msg: "invalid route", ExecutorNode: req.ExecutorNode, TargetNode: req.TargetNode, Method: req.Method})
 			return
 		}
-		childHdr := header.CloneToTCP(hdr).WithTargetID(nextNode)
+		childHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.sendCallResp(ctx, hdr, CallResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", ExecutorNode: req.ExecutorNode, TargetNode: req.TargetNode, Method: req.Method})
+			return
+		}
+		childHdr.WithTargetID(nextNode)
 		h.sendToConn(ctx, execConn, childHdr, payloadFrom(message{Action: actionCall, Data: mustJSON(req)}))
 		return
 	}
@@ -172,7 +229,12 @@ func (h *Handler) handleCall(ctx context.Context, conn core.IConnection, hdr cor
 		h.sendCallResp(ctx, hdr, CallResp{ReqID: req.ReqID, Code: 403, Msg: "permission denied", ExecutorNode: req.ExecutorNode, TargetNode: req.TargetNode, Method: req.Method})
 		return
 	}
-	downHdr := header.CloneToTCP(hdr).WithTargetID(req.TargetNode)
+	downHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.sendCallResp(ctx, hdr, CallResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", ExecutorNode: req.ExecutorNode, TargetNode: req.TargetNode, Method: req.Method})
+		return
+	}
+	downHdr.WithTargetID(req.TargetNode)
 	h.sendToConn(ctx, targetConn, downHdr, payloadFrom(message{Action: actionCall, Data: mustJSON(req)}))
 }
 
@@ -321,7 +383,12 @@ func (h *Handler) forwardDownOrDrop(ctx context.Context, srv core.IServer, hdr c
 	if next == nil {
 		return
 	}
-	_ = srv.Send(ctx, next.ID(), header.CloneToTCP(hdr).WithTargetID(target), payload)
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		return
+	}
+	fwdHdr.WithTargetID(target)
+	_ = srv.Send(ctx, next.ID(), fwdHdr, payload)
 }
 
 func (h *Handler) sendToConn(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {

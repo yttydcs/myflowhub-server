@@ -1,71 +1,88 @@
-# Plan - MyFlowHub-Server 公共协议包收敛（protocol/*）
+# Plan - HeaderTcp v2（32B）+ Core 路由统一（Server）
+
+## Workflow 信息
+- Repo：`MyFlowHub-Server`
+- 分支：`refactor/hdrtcp-v2`
+- Worktree：`d:\\project\\MyFlowHub3\\worktrees\\hdrtcp-v2\\MyFlowHub-Server`
+- 目标 PR：PR1（跨 3 个 repo 同步提交/合并）
 
 ## 项目目标
-将当前开发中的 `protocol/*` 公共协议包（对外可复用的请求/响应模型、常量、必要校验）纳入版本控制，并将 `internal/handler/*` 的类型定义与引用收敛到 `protocol/*`（保持行为不变），形成可审计、可回放的提交链，供 `MyFlowHub-Win` 通过 `replace` 复用。
+1) 配合 Core 完成 **HeaderTcp v2（32B）big-bang** 升级，确保 server 收发与测试全部通过。  
+2) 配合 Core 路由框架规则统一：`MajorCmd` 逐跳进入 handler；`MajorMsg/OK/Err` 走 Core 快速转发。  
+3) 为后续子协议“可裁切/可组装”做准备：server 作为中间层只负责调用子协议库（本 PR 只做地基，不做大拆分）。
 
-## 当前状态（事实）
-- 本 worktree 分支：`feat/public-protocol`（从 `main` 创建）。
-- 原主 worktree（`d:\project\MyFlowHub3\repo\MyFlowHub-Server`）存在：
-  - 已跟踪文件的未提交修改（多处 `internal/handler/*/types.go`）。
-  - 未跟踪新增目录 `protocol/`（多处 `protocol/*/types.go`）。
-- 当前 `go test ./...` 在主 worktree 可通过（作为回归基线）。
+## 范围
+### 必须（PR1）
+- 适配 Core 的 `IHeader` v2 接口变更（编译通过）
+- 使用 HeaderTcp v2 编解码（wire 32B）
+- 更新/补齐 server 测试与文档（`docs/core.md` 的路由规则描述需同步）
 
-## 非目标 / 约束
-- 不新增或改变运行时行为（仅类型/常量/校验辅助导出 + handler 引用迁移）。
-- 不在主 worktree（`repo/MyFlowHub-Server`）直接做实现性改动；所有改动在本 worktree 完成。
+### 不做（本 PR）
+- 子协议拆独立 repo/go module（另起 PR2+）
+- Linux 构建/验收（用户已允许忽略）
+
+## 已确认的关键决策（来自阶段 2）
+- 兼容策略：**S3 / big-bang**；切换后 **v1 不再兼容**。
+- HeaderTcp v2：**32B（+8B）**。
+- 路由框架规则：**MajorCmd 不由 Core 自动转发，必须进 handler；MajorMsg/OK/Err 走 Core 快速转发**。
+- 语义基线：`TargetID=0` 仅表示“下行广播不回父”，不能表示上送父节点。
+
+## 问题清单（阻塞：是）
+> 与 Core/Win 共用的 wire 细节确认项；未确认禁止进入阶段 3.2。
+
+1) HeaderTcp v2 `magic` 值（建议 `0x4D48`）是否确认？
+2) `hop_limit` 默认值/语义是否确认？（建议默认 `16`，转发递减）
+3) `trace_id` 生成策略是否确认？（建议发送侧自动补齐随机 uint32；响应继承；转发不改）
+4) `timestamp` 单位是否确认？（建议保持 Unix 秒 `uint32`）
 
 ## 任务清单（Checklist）
 
-### S1 - 将主 worktree 的 WIP 迁移到本 worktree
-- 目标：把主 worktree 的未提交修改与未跟踪 `protocol/*` 文件完整迁入本 worktree，且不引入 `node_modules/`、构建产物等无关文件。
-- 涉及模块/文件：
-  - `internal/handler/**/types.go`（以及可能的关联引用文件）
-  - `protocol/**`（新增）
+### S1 - 适配 Core HeaderTcp v2 / IHeader 变更
+- 目标：修复 `go test ./...` 期间由 Core 接口变更引起的编译错误；确保 server 所有 header 构造、clone、response helper 与 codec 使用 v2。
+- 涉及模块/文件（预期）：
+  - `internal/**`（所有使用 `core.IHeader` / `header.HeaderTcp` 的位置）
+  - `tests/**`（大量构造 header 的用例）
+  - `internal/login_server/*`（登录链路对路由/SourceID 约束敏感）
 - 验收条件：
-  - 本 worktree 的 `git status` 能看到与主 worktree 同等的变更集合（内容一致）。
   - `go test ./...` 通过。
+  - 与 Win 联调的冒烟链路可跑通（见 Win 侧 smoke 步骤）。
 - 测试点：
-  - `go test ./...`
-  - `go test ./tests -run Test -count=1`（如存在用例）
+  - `go test ./... -count=1`
+  - 重点回归：auth / varstore / topicbus / file 的集成测试（如存在）。
 - 回滚点：
-  - 直接删除本 worktree 目录 + 删除分支 `feat/public-protocol`。
+  - 将适配拆为独立提交；可 revert。
 
-### S2 - 审核与最小化变更范围（保持行为不变）
-- 目标：确认迁移仅为“类型定义迁移/导出/引用调整”，不改变 handler 逻辑、路由规则、权限校验等行为。
-- 涉及模块/文件：
-  - `internal/handler/**`（重点检查：除了 import 与类型名外是否有逻辑变化）
-  - `protocol/**`
+### S2 - 路由语义与 Major 使用自检（避免隐式协议特例）
+- 目标：确保 server 侧各子协议对 Major 的使用符合框架规则（控制面用 Cmd；数据/响应用 Msg/OK/Err），避免“用 payload[0] 决定路由”的隐式依赖扩散。
+- 涉及模块/文件（预期）：
+  - `internal/handler/**`（尤其 file：CTRL/DATA/ACK）
+  - `protocol/**`（如需补充常量/注释，保持最小化）
 - 验收条件：
-  - `git diff` 中除类型定义移动、包名引用、必要导出符号外，不出现行为相关修改（分支、条件、路由、权限）。
-  - `go test ./...` 通过。
+  - server 端不依赖 Core 的“特定 SubProto 特判”才能正确路由（例如 file CTRL 不再需要 Core 特判）。
 - 测试点：
-  - `go test ./...`
+  - file：CTRL 从子节点上送应逐跳进入 handler；DATA 仍能快速转发且吞吐不明显下降。
 - 回滚点：
-  - 若发现行为修改，回退到 S1 并重新迁移/修剪。
+  - 若发现协议 Major 使用不一致，先修正协议侧，避免回退 Core 框架规则。
 
-### S3 - 提交与可审计化
-- 目标：将变更拆成清晰提交（至少 1 个），便于 Win 端跟随。
+### S3 - 文档同步（core.md）
+- 目标：更新 `docs/core.md` 中关于 PreRouting 与 Major 的描述，使其与新框架规则一致（可审计/可交接）。
+- 涉及模块/文件（预期）：
+  - `docs/core.md`
 - 验收条件：
-  - `git status` 干净。
-  - 提交信息能反映“新增 protocol 包 + handler 引用迁移（无行为变更）”。
-- 测试点：
-  - `go test ./...`（提交前后各跑一次，记录结果）
+  - 文档不再描述“file CTRL 特判”之类已移除规则；明确 Major 分流与 `TargetID=0` 语义。
 - 回滚点：
-  - `git revert <commit>` 或直接删除分支。
+  - 文档变更独立提交；可 revert。
 
 ### S4 - Code Review（阶段 3.3）与归档（阶段 4）
-- 目标：按要求输出 Review 结论，并在本 worktree 根目录创建 `docs/change/YYYY-MM-DD_public-protocol.md` 归档。
+- 目标：完成 Review 清单并在本 worktree 根目录创建 `docs/change/2026-02-10_hdrtcp-v2.md`。
 - 验收条件：
-  - Review 清单逐项“通过/不通过”结论明确；不通过则回到阶段 3.2 修正。
-  - `docs/change` 文档包含：背景、具体变更、任务映射（S1-S3）、关键决策/权衡、测试结果、影响与回滚。
-- 回滚点：
-  - 删除归档文档并回退提交（仅当 workflow 未结束）。
+  - Review 逐项“通过/不通过”结论明确；不通过则回到阶段 3.2 修正。
+  - 归档文档包含：背景/目标、具体变更、任务映射（S1-S3）、关键决策与权衡、测试结果、影响与回滚方案。
 
 ## 依赖关系
-- S1 完成后才能进行 S2/S3。
-- S3 完成后才能进入阶段 3.3 与阶段 4。
+- 依赖 Core 的 v2 头部与路由框架落地；同时 Win 需要同步升级，否则无法联调。
 
 ## 风险与注意事项
-- 行尾 LF/CRLF 可能导致噪音 diff；原则上本 workflow 不做全局格式化，仅在必要时做最小化处理。
-- 若 `protocol/*` 与 Win 端存在生成/依赖关系（如代码生成产物），需在 S2 中明确是否应提交生成文件（默认：仅提交源码与稳定产物）。
+- wire 破坏性变更必须三端同步；建议在本地联调通过后再分别推远端 PR。
+- server 测试若依赖固定头长（24B）需要全部更新为 32B。
 

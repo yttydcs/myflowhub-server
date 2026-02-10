@@ -145,10 +145,51 @@ func (h *Handler) OnReceive(ctx context.Context, conn core.IConnection, hdr core
 	}
 	entry, ok := h.LookupAction(msg.Action)
 	if !ok {
+		// 兼容：flow 的响应帧（*_resp）不需要本节点理解；target!=local 时按 header.TargetID 逐跳转发即可。
+		if h.forwardRemoteByHeaderTarget(ctx, conn, hdr, payload) {
+			return
+		}
 		h.log.Debug("unknown flow action", "action", msg.Action)
 		return
 	}
 	entry.Handle(ctx, conn, hdr, msg.Data)
+}
+
+func (h *Handler) forwardRemoteByHeaderTarget(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) bool {
+	if hdr == nil || len(payload) == 0 {
+		return false
+	}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil || srv.ConnManager() == nil {
+		return false
+	}
+	target := hdr.TargetID()
+	if target == 0 || target == srv.NodeID() {
+		return false
+	}
+
+	var next core.IConnection
+	if c, ok := srv.ConnManager().GetByNode(target); ok && c != nil {
+		next = c
+	} else {
+		next = findParentConn(srv.ConnManager())
+	}
+	if next == nil {
+		h.log.Warn("drop flow frame: no route", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	if isParentConn(conn) && isParentConn(next) {
+		h.log.Warn("drop flow frame due to invalid route (came from parent)", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.log.Warn("drop flow frame due to hop_limit", "target", target, "source", hdr.SourceID())
+		return true
+	}
+	fwdHdr.WithTargetID(target)
+	_ = srv.Send(ctx, next.ID(), fwdHdr, payload)
+	return true
 }
 
 func (h *Handler) handleSet(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
@@ -198,7 +239,9 @@ func (h *Handler) handleSet(ctx context.Context, conn core.IConnection, hdr core
 			h.applySetLocal(ctx, req, origin)
 			return
 		}
-		h.forwardDown(ctx, srv, hdr, message{Action: actionSet, Data: mustJSON(req)}, executor)
+		if !h.forwardDown(ctx, srv, hdr, message{Action: actionSet, Data: mustJSON(req)}, executor) {
+			h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 500, Msg: "forward failed", FlowID: req.FlowID})
+		}
 		return
 	}
 
@@ -227,7 +270,12 @@ func (h *Handler) handleSet(ctx context.Context, conn core.IConnection, hdr core
 			return
 		}
 		// 上送必须让父节点进入 handler：TargetID=父节点自身
-		upHdr := header.CloneToTCP(hdr).WithTargetID(parentNode)
+		upHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", FlowID: req.FlowID})
+			return
+		}
+		upHdr.WithTargetID(parentNode)
 		h.sendToConn(ctx, parent, upHdr, payloadFrom(message{Action: actionSet, Data: mustJSON(req)}))
 		return
 	}
@@ -240,7 +288,12 @@ func (h *Handler) handleSet(ctx context.Context, conn core.IConnection, hdr core
 			h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 500, Msg: "invalid route", FlowID: req.FlowID})
 			return
 		}
-		childHdr := header.CloneToTCP(hdr).WithTargetID(nextNode)
+		childHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", FlowID: req.FlowID})
+			return
+		}
+		childHdr.WithTargetID(nextNode)
 		h.sendToConn(ctx, originConn, childHdr, payloadFrom(message{Action: actionSet, Data: mustJSON(req)}))
 		return
 	}
@@ -250,7 +303,12 @@ func (h *Handler) handleSet(ctx context.Context, conn core.IConnection, hdr core
 		h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 403, Msg: "permission denied", FlowID: req.FlowID})
 		return
 	}
-	downHdr := header.CloneToTCP(hdr).WithTargetID(executor)
+	downHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.sendSetRespToNode(ctx, origin, setResp{ReqID: req.ReqID, Code: 500, Msg: "hop limit exceeded", FlowID: req.FlowID})
+		return
+	}
+	downHdr.WithTargetID(executor)
 	h.sendToConn(ctx, execConn, downHdr, payloadFrom(message{Action: actionSet, Data: mustJSON(req)}))
 }
 
@@ -561,7 +619,12 @@ func (h *Handler) forwardToExecutorNoPerm(ctx context.Context, srv core.IServer,
 		if parentNode == 0 {
 			return
 		}
-		upHdr := header.CloneToTCP(hdr).WithTargetID(parentNode)
+		upHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.log.Warn("drop flow frame due to hop_limit", "target", parentNode, "source", hdr.SourceID())
+			return
+		}
+		upHdr.WithTargetID(parentNode)
 		h.sendToConn(ctx, parent, upHdr, payloadFrom(msg))
 		return
 	}
@@ -571,11 +634,21 @@ func (h *Handler) forwardToExecutorNoPerm(ctx context.Context, srv core.IServer,
 		if nextNode == 0 {
 			return
 		}
-		childHdr := header.CloneToTCP(hdr).WithTargetID(nextNode)
+		childHdr, ok := header.CloneToTCPForForward(hdr)
+		if !ok {
+			h.log.Warn("drop flow frame due to hop_limit", "target", nextNode, "source", hdr.SourceID())
+			return
+		}
+		childHdr.WithTargetID(nextNode)
 		h.sendToConn(ctx, originConn, childHdr, payloadFrom(msg))
 		return
 	}
-	downHdr := header.CloneToTCP(hdr).WithTargetID(executor)
+	downHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.log.Warn("drop flow frame due to hop_limit", "target", executor, "source", hdr.SourceID())
+		return
+	}
+	downHdr.WithTargetID(executor)
 	h.sendToConn(ctx, execConn, downHdr, payloadFrom(msg))
 }
 
@@ -888,9 +961,9 @@ func (h *Handler) sendCtrlToNode(ctx context.Context, target uint32, msg message
 	_ = srv.Send(ctx, next.ID(), hdr, body)
 }
 
-func (h *Handler) forwardDown(ctx context.Context, srv core.IServer, hdr core.IHeader, msg message, target uint32) {
+func (h *Handler) forwardDown(ctx context.Context, srv core.IServer, hdr core.IHeader, msg message, target uint32) bool {
 	if srv == nil || hdr == nil || target == 0 {
-		return
+		return false
 	}
 	body, _ := json.Marshal(msg)
 	var next core.IConnection
@@ -898,9 +971,16 @@ func (h *Handler) forwardDown(ctx context.Context, srv core.IServer, hdr core.IH
 		next = c
 	}
 	if next == nil {
-		return
+		return false
 	}
-	_ = srv.Send(ctx, next.ID(), header.CloneToTCP(hdr).WithTargetID(target), body)
+	fwdHdr, ok := header.CloneToTCPForForward(hdr)
+	if !ok {
+		h.log.Warn("drop flow frame due to hop_limit", "target", target, "source", hdr.SourceID())
+		return false
+	}
+	fwdHdr.WithTargetID(target)
+	_ = srv.Send(ctx, next.ID(), fwdHdr, body)
+	return true
 }
 
 func mustJSON(v any) json.RawMessage {
