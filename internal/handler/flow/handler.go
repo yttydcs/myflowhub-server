@@ -20,7 +20,8 @@ import (
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 	"github.com/yttydcs/myflowhub-core/subproto"
 
-	execproto "github.com/yttydcs/myflowhub-server/internal/handler/exec"
+	"github.com/yttydcs/myflowhub-server/internal/broker"
+	protocolexec "github.com/yttydcs/myflowhub-server/protocol/exec"
 )
 
 type LocalMethodFunc func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
@@ -823,10 +824,10 @@ func (h *Handler) executeNode(ctx context.Context, flow setReq, n node) (code in
 			timeoutMs = *n.TimeoutMs
 		}
 		reqID := newUUID()
-		ch, cancel := execproto.SharedBroker().Register(reqID)
+		ch, cancel := broker.SharedExecCallBroker().Register(reqID)
 		defer cancel()
 
-		call := execproto.CallReq{
+		call := protocolexec.CallReq{
 			ReqID:        reqID,
 			ExecutorNode: local,
 			TargetNode:   target,
@@ -854,7 +855,7 @@ func (h *Handler) executeNode(ctx context.Context, flow setReq, n node) (code in
 	}
 }
 
-func (h *Handler) sendExecCall(ctx context.Context, srv core.IServer, call execproto.CallReq) error {
+func (h *Handler) sendExecCall(ctx context.Context, srv core.IServer, call protocolexec.CallReq) error {
 	if srv == nil {
 		return errors.New("no server")
 	}
@@ -865,11 +866,11 @@ func (h *Handler) sendExecCall(ctx context.Context, srv core.IServer, call execp
 	env := struct {
 		Action string          `json:"action"`
 		Data   json.RawMessage `json:"data"`
-	}{Action: "call", Data: mustJSON(call)}
+	}{Action: protocolexec.ActionCall, Data: mustJSON(call)}
 	body, _ := json.Marshal(env)
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
-		WithSubProto(execproto.SubProtoExec).
+		WithSubProto(protocolexec.SubProtoExec).
 		WithSourceID(local)
 
 	cm := srv.ConnManager()

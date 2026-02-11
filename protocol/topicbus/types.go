@@ -1,55 +1,33 @@
 package topicbus
 
-import "encoding/json"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 
-const SubProtoTopicBus uint8 = 4
+// 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/topicbus`，
+// 其类型/常量全部委托到独立协议仓库 MyFlowHub-Proto（wire 不变）。
+
+const SubProtoTopicBus uint8 = protocol.SubProtoTopicBus
 
 const (
-	ActionSubscribe          = "subscribe"
-	ActionSubscribeResp      = "subscribe_resp"
-	ActionSubscribeBatch     = "subscribe_batch"
-	ActionSubscribeBatchResp = "subscribe_batch_resp"
+	ActionSubscribe          = protocol.ActionSubscribe
+	ActionSubscribeResp      = protocol.ActionSubscribeResp
+	ActionSubscribeBatch     = protocol.ActionSubscribeBatch
+	ActionSubscribeBatchResp = protocol.ActionSubscribeBatchResp
 
-	ActionUnsubscribe          = "unsubscribe"
-	ActionUnsubscribeResp      = "unsubscribe_resp"
-	ActionUnsubscribeBatch     = "unsubscribe_batch"
-	ActionUnsubscribeBatchResp = "unsubscribe_batch_resp"
+	ActionUnsubscribe          = protocol.ActionUnsubscribe
+	ActionUnsubscribeResp      = protocol.ActionUnsubscribeResp
+	ActionUnsubscribeBatch     = protocol.ActionUnsubscribeBatch
+	ActionUnsubscribeBatchResp = protocol.ActionUnsubscribeBatchResp
 
-	ActionListSubs     = "list_subs"
-	ActionListSubsResp = "list_subs_resp"
+	ActionListSubs     = protocol.ActionListSubs
+	ActionListSubsResp = protocol.ActionListSubsResp
 
-	ActionPublish = "publish"
+	ActionPublish = protocol.ActionPublish
 )
 
-type Message struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
+type Message = protocol.Message
 
-type SubscribeReq struct {
-	Topic string `json:"topic"`
-}
-
-type SubscribeBatchReq struct {
-	Topics []string `json:"topics"`
-}
-
-type PublishReq struct {
-	Topic   string          `json:"topic"`
-	Name    string          `json:"name"`
-	TS      int64           `json:"ts"`
-	Payload json.RawMessage `json:"payload,omitempty"`
-}
-
-type Resp struct {
-	Code   int      `json:"code"`
-	Msg    string   `json:"msg,omitempty"`
-	Topic  string   `json:"topic,omitempty"`
-	Topics []string `json:"topics,omitempty"`
-}
-
-type ListResp struct {
-	Code   int      `json:"code"`
-	Msg    string   `json:"msg,omitempty"`
-	Topics []string `json:"topics"`
-}
+type SubscribeReq = protocol.SubscribeReq
+type SubscribeBatchReq = protocol.SubscribeBatchReq
+type PublishReq = protocol.PublishReq
+type Resp = protocol.Resp
+type ListResp = protocol.ListResp

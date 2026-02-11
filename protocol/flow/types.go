@@ -1,147 +1,43 @@
 package flow
 
-import "encoding/json"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/flow"
 
-const SubProtoFlow uint8 = 6
+// 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/flow`，
+// 其类型/常量全部委托到独立协议仓库 MyFlowHub-Proto（wire 不变）。
+
+const SubProtoFlow uint8 = protocol.SubProtoFlow
 
 const (
-	ActionSet        = "set"
-	ActionSetResp    = "set_resp"
-	ActionRun        = "run"
-	ActionRunResp    = "run_resp"
-	ActionStatus     = "status"
-	ActionStatusResp = "status_resp"
-	ActionList       = "list"
-	ActionListResp   = "list_resp"
-	ActionGet        = "get"
-	ActionGetResp    = "get_resp"
+	ActionSet        = protocol.ActionSet
+	ActionSetResp    = protocol.ActionSetResp
+	ActionRun        = protocol.ActionRun
+	ActionRunResp    = protocol.ActionRunResp
+	ActionStatus     = protocol.ActionStatus
+	ActionStatusResp = protocol.ActionStatusResp
+	ActionList       = protocol.ActionList
+	ActionListResp   = protocol.ActionListResp
+	ActionGet        = protocol.ActionGet
+	ActionGetResp    = protocol.ActionGetResp
 )
 
-const PermFlowSet = "flow.set"
+const PermFlowSet = protocol.PermFlowSet
 
-type Message struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
+type Message = protocol.Message
 
-type Trigger struct {
-	Type    string `json:"type"`
-	EveryMs uint64 `json:"every_ms,omitempty"`
-}
+type Trigger = protocol.Trigger
+type Graph = protocol.Graph
+type Node = protocol.Node
+type Edge = protocol.Edge
 
-type Graph struct {
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
-}
-
-type Node struct {
-	ID        string          `json:"id"`
-	Kind      string          `json:"kind"`
-	AllowFail bool            `json:"allow_fail,omitempty"`
-	Retry     *int            `json:"retry,omitempty"`
-	TimeoutMs *int            `json:"timeout_ms,omitempty"`
-	Spec      json.RawMessage `json:"spec"`
-}
-
-type Edge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-}
-
-type SetReq struct {
-	ReqID        string  `json:"req_id"`
-	OriginNode   uint32  `json:"origin_node,omitempty"`
-	ExecutorNode uint32  `json:"executor_node,omitempty"`
-	FlowID       string  `json:"flow_id"`
-	Name         string  `json:"name,omitempty"`
-	Trigger      Trigger `json:"trigger"`
-	Graph        Graph   `json:"graph"`
-}
-
-type SetResp struct {
-	ReqID  string `json:"req_id"`
-	Code   int    `json:"code"`
-	Msg    string `json:"msg,omitempty"`
-	FlowID string `json:"flow_id,omitempty"`
-}
-
-type RunReq struct {
-	ReqID        string `json:"req_id"`
-	OriginNode   uint32 `json:"origin_node,omitempty"`
-	ExecutorNode uint32 `json:"executor_node,omitempty"`
-	FlowID       string `json:"flow_id"`
-}
-
-type RunResp struct {
-	ReqID  string `json:"req_id"`
-	Code   int    `json:"code"`
-	Msg    string `json:"msg,omitempty"`
-	FlowID string `json:"flow_id,omitempty"`
-	RunID  string `json:"run_id,omitempty"`
-}
-
-type StatusReq struct {
-	ReqID        string `json:"req_id"`
-	OriginNode   uint32 `json:"origin_node,omitempty"`
-	ExecutorNode uint32 `json:"executor_node,omitempty"`
-	FlowID       string `json:"flow_id"`
-	RunID        string `json:"run_id,omitempty"`
-}
-
-type NodeStatus struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Code   int    `json:"code,omitempty"`
-	Msg    string `json:"msg,omitempty"`
-}
-
-type StatusResp struct {
-	ReqID        string       `json:"req_id"`
-	Code         int          `json:"code"`
-	Msg          string       `json:"msg,omitempty"`
-	ExecutorNode uint32       `json:"executor_node,omitempty"`
-	FlowID       string       `json:"flow_id,omitempty"`
-	RunID        string       `json:"run_id,omitempty"`
-	Status       string       `json:"status,omitempty"`
-	Nodes        []NodeStatus `json:"nodes,omitempty"`
-}
-
-type ListReq struct {
-	ReqID        string `json:"req_id"`
-	OriginNode   uint32 `json:"origin_node,omitempty"`
-	ExecutorNode uint32 `json:"executor_node,omitempty"`
-}
-
-type FlowSummary struct {
-	FlowID     string `json:"flow_id"`
-	Name       string `json:"name,omitempty"`
-	EveryMs    uint64 `json:"every_ms,omitempty"`
-	LastRunID  string `json:"last_run_id,omitempty"`
-	LastStatus string `json:"last_status,omitempty"`
-}
-
-type ListResp struct {
-	ReqID        string        `json:"req_id"`
-	Code         int           `json:"code"`
-	Msg          string        `json:"msg,omitempty"`
-	ExecutorNode uint32        `json:"executor_node,omitempty"`
-	Flows        []FlowSummary `json:"flows,omitempty"`
-}
-
-type GetReq struct {
-	ReqID        string `json:"req_id"`
-	OriginNode   uint32 `json:"origin_node,omitempty"`
-	ExecutorNode uint32 `json:"executor_node,omitempty"`
-	FlowID       string `json:"flow_id"`
-}
-
-type GetResp struct {
-	ReqID        string  `json:"req_id"`
-	Code         int     `json:"code"`
-	Msg          string  `json:"msg,omitempty"`
-	ExecutorNode uint32  `json:"executor_node,omitempty"`
-	FlowID       string  `json:"flow_id,omitempty"`
-	Name         string  `json:"name,omitempty"`
-	Trigger      Trigger `json:"trigger,omitempty"`
-	Graph        Graph   `json:"graph,omitempty"`
-}
+type SetReq = protocol.SetReq
+type SetResp = protocol.SetResp
+type RunReq = protocol.RunReq
+type RunResp = protocol.RunResp
+type StatusReq = protocol.StatusReq
+type NodeStatus = protocol.NodeStatus
+type StatusResp = protocol.StatusResp
+type ListReq = protocol.ListReq
+type FlowSummary = protocol.FlowSummary
+type ListResp = protocol.ListResp
+type GetReq = protocol.GetReq
+type GetResp = protocol.GetResp

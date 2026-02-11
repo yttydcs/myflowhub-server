@@ -7,6 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/yttydcs/myflowhub-core v0.1.0
+	github.com/yttydcs/myflowhub-proto v0.0.0
 )
 
 require (
@@ -23,3 +24,5 @@ require (
 )
 
 replace github.com/yttydcs/myflowhub-core => ../MyFlowHub-Core
+
+replace github.com/yttydcs/myflowhub-proto => ../MyFlowHub-Proto

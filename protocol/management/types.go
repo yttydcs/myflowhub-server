@@ -1,80 +1,38 @@
 package management
 
-import "encoding/json"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/management"
 
-const SubProtoManagement uint8 = 1
+// 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/management`，
+// 其类型/常量全部委托到独立协议仓库 MyFlowHub-Proto（wire 不变）。
+
+const SubProtoManagement uint8 = protocol.SubProtoManagement
 
 const (
-	ActionNodeEcho     = "node_echo"
-	ActionNodeEchoResp = "node_echo_resp"
-	ActionListNodes    = "list_nodes"
-	ActionListNodesResp = "list_nodes_resp"
-	ActionListSubtree    = "list_subtree"
-	ActionListSubtreeResp = "list_subtree_resp"
-	ActionConfigGet      = "config_get"
-	ActionConfigGetResp  = "config_get_resp"
-	ActionConfigSet      = "config_set"
-	ActionConfigSetResp  = "config_set_resp"
-	ActionConfigList     = "config_list"
-	ActionConfigListResp = "config_list_resp"
+	ActionNodeEcho        = protocol.ActionNodeEcho
+	ActionNodeEchoResp    = protocol.ActionNodeEchoResp
+	ActionListNodes       = protocol.ActionListNodes
+	ActionListNodesResp   = protocol.ActionListNodesResp
+	ActionListSubtree     = protocol.ActionListSubtree
+	ActionListSubtreeResp = protocol.ActionListSubtreeResp
+	ActionConfigGet       = protocol.ActionConfigGet
+	ActionConfigGetResp   = protocol.ActionConfigGetResp
+	ActionConfigSet       = protocol.ActionConfigSet
+	ActionConfigSetResp   = protocol.ActionConfigSetResp
+	ActionConfigList      = protocol.ActionConfigList
+	ActionConfigListResp  = protocol.ActionConfigListResp
 )
 
-type Message struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
+type Message = protocol.Message
 
-type NodeEchoReq struct {
-	Message string `json:"message"`
-}
-
-type NodeEchoResp struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg,omitempty"`
-	Echo string `json:"echo,omitempty"`
-}
-
-type ListNodesReq struct{}
-
-type ListNodesResp struct {
-	Code  int        `json:"code"`
-	Msg   string     `json:"msg,omitempty"`
-	Nodes []NodeInfo `json:"nodes,omitempty"`
-}
-
-type ConfigGetReq struct {
-	Key string `json:"key"`
-}
-
-type ConfigSetReq struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-type ConfigResp struct {
-	Code  int    `json:"code"`
-	Msg   string `json:"msg,omitempty"`
-	Key   string `json:"key,omitempty"`
-	Value string `json:"value,omitempty"`
-}
-
-type ConfigListReq struct{}
-
-type ConfigListResp struct {
-	Code int      `json:"code"`
-	Msg  string   `json:"msg,omitempty"`
-	Keys []string `json:"keys,omitempty"`
-}
-
-type NodeInfo struct {
-	NodeID      uint32 `json:"node_id"`
-	HasChildren bool   `json:"has_children,omitempty"`
-}
-
-type ListSubtreeReq struct{}
-
-type ListSubtreeResp struct {
-	Code  int        `json:"code"`
-	Msg   string     `json:"msg,omitempty"`
-	Nodes []NodeInfo `json:"nodes,omitempty"`
-}
+type NodeEchoReq = protocol.NodeEchoReq
+type NodeEchoResp = protocol.NodeEchoResp
+type ListNodesReq = protocol.ListNodesReq
+type ListNodesResp = protocol.ListNodesResp
+type ConfigGetReq = protocol.ConfigGetReq
+type ConfigSetReq = protocol.ConfigSetReq
+type ConfigResp = protocol.ConfigResp
+type ConfigListReq = protocol.ConfigListReq
+type ConfigListResp = protocol.ConfigListResp
+type NodeInfo = protocol.NodeInfo
+type ListSubtreeReq = protocol.ListSubtreeReq
+type ListSubtreeResp = protocol.ListSubtreeResp

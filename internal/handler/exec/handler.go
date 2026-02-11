@@ -11,6 +11,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
 	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/internal/broker"
 )
 
 type MethodFunc func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
@@ -243,7 +244,7 @@ func (h *Handler) handleCallResp(_ context.Context, _ core.IConnection, _ core.I
 	if err := json.Unmarshal(data, &resp); err != nil || strings.TrimSpace(resp.ReqID) == "" {
 		return
 	}
-	SharedBroker().Deliver(resp)
+	broker.SharedExecCallBroker().Deliver(resp.ReqID, resp)
 }
 
 func (h *Handler) execLocal(ctx context.Context, req CallReq) {

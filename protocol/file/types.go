@@ -1,87 +1,35 @@
 package file
 
-import "encoding/json"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
 
-const SubProtoFile uint8 = 5
+// 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/file`，
+// 其类型/常量全部委托到独立协议仓库 MyFlowHub-Proto（wire 不变）。
+
+const SubProtoFile uint8 = protocol.SubProtoFile
 
 const (
-	KindCtrl byte = 0x01
-	KindData byte = 0x02
-	KindAck  byte = 0x03
+	KindCtrl byte = protocol.KindCtrl
+	KindData byte = protocol.KindData
+	KindAck  byte = protocol.KindAck
 )
 
 const (
-	ActionRead      = "read"
-	ActionWrite     = "write"
-	ActionReadResp  = "read_resp"
-	ActionWriteResp = "write_resp"
+	ActionRead      = protocol.ActionRead
+	ActionWrite     = protocol.ActionWrite
+	ActionReadResp  = protocol.ActionReadResp
+	ActionWriteResp = protocol.ActionWriteResp
 )
 
 const (
-	OpPull     = "pull"
-	OpOffer    = "offer"
-	OpList     = "list"
-	OpReadText = "read_text"
+	OpPull     = protocol.OpPull
+	OpOffer    = protocol.OpOffer
+	OpList     = protocol.OpList
+	OpReadText = protocol.OpReadText
 )
 
-type Message struct {
-	Action string          `json:"action"`
-	Data   json.RawMessage `json:"data"`
-}
+type Message = protocol.Message
 
-type ReadReq struct {
-	Op         string `json:"op"`
-	Target     uint32 `json:"target,omitempty"`
-	Dir        string `json:"dir,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Overwrite  *bool  `json:"overwrite,omitempty"`
-	ResumeFrom uint64 `json:"resume_from,omitempty"`
-	WantHash   *bool  `json:"want_hash,omitempty"`
-	Recursive  bool   `json:"recursive,omitempty"`
-	MaxBytes   uint32 `json:"max_bytes,omitempty"`
-}
-
-type ReadResp struct {
-	Code      int      `json:"code"`
-	Msg       string   `json:"msg,omitempty"`
-	Op        string   `json:"op,omitempty"`
-	SessionID string   `json:"session_id,omitempty"`
-	Provider  uint32   `json:"provider,omitempty"`
-	Consumer  uint32   `json:"consumer,omitempty"`
-	Dir       string   `json:"dir,omitempty"`
-	Name      string   `json:"name,omitempty"`
-	Size      uint64   `json:"size,omitempty"`
-	Sha256    string   `json:"sha256,omitempty"`
-	StartFrom uint64   `json:"start_from,omitempty"`
-	Chunk     uint32   `json:"chunk_bytes,omitempty"`
-	Dirs      []string `json:"dirs,omitempty"`
-	Files     []string `json:"files,omitempty"`
-	Text      string   `json:"text,omitempty"`
-	Truncated bool     `json:"truncated,omitempty"`
-}
-
-type WriteReq struct {
-	Op        string `json:"op"`
-	Target    uint32 `json:"target"`
-	SessionID string `json:"session_id"`
-	Dir       string `json:"dir,omitempty"`
-	Name      string `json:"name"`
-	Size      uint64 `json:"size"`
-	Sha256    string `json:"sha256,omitempty"`
-	Overwrite *bool  `json:"overwrite,omitempty"`
-}
-
-type WriteResp struct {
-	Code       int    `json:"code"`
-	Msg        string `json:"msg,omitempty"`
-	Op         string `json:"op,omitempty"`
-	SessionID  string `json:"session_id,omitempty"`
-	Provider   uint32 `json:"provider,omitempty"`
-	Consumer   uint32 `json:"consumer,omitempty"`
-	Dir        string `json:"dir,omitempty"`
-	Name       string `json:"name,omitempty"`
-	Size       uint64 `json:"size,omitempty"`
-	Sha256     string `json:"sha256,omitempty"`
-	Accept     bool   `json:"accept,omitempty"`
-	ResumeFrom uint64 `json:"resume_from,omitempty"`
-}
+type ReadReq = protocol.ReadReq
+type ReadResp = protocol.ReadResp
+type WriteReq = protocol.WriteReq
+type WriteResp = protocol.WriteResp
