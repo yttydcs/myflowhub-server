@@ -3,7 +3,7 @@ TopicBus 协议（SubProto=4）规范
 
 范围
 ----
-- 仅描述当前 `MyFlowHub-Server/internal/handler/topicbus` 的实现与约定。
+- 仅描述当前 `MyFlowHub-Server/subproto/topicbus` 的实现与约定。
 - 不涉及 login_server 或其他旧流程。
 
 总览
@@ -118,5 +118,5 @@ TopicBus 协议（SubProto=4）规范
 
 集成提示
 --------
-- Hub 注册：`dispatcher.RegisterHandler(topicbus.NewTopicBusHandlerWithConfig(cfg, log))`
+- Hub 注册：`dispatcher.RegisterHandler(topicbus.NewTopicBusHandlerWithConfig(cfg, log))`（建议 import `github.com/yttydcs/myflowhub-server/subproto/topicbus`）
 - 子协议编号：`SubProto=4`。***

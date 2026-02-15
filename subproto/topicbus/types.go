@@ -1,6 +1,6 @@
 package topicbus
 
-import protocol "github.com/yttydcs/myflowhub-server/protocol/topicbus"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 
 // 子协议：Topic 订阅/发布。
 const SubProtoTopicBus uint8 = protocol.SubProtoTopicBus

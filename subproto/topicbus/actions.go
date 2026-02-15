@@ -30,4 +30,3 @@ func registerActions(h *TopicBusHandler) []core.SubProcessAction {
 		topicAction{name: actionPublish, fn: h.handlePublish},
 	}
 }
-

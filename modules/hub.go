@@ -10,9 +10,9 @@ import (
 	exechandler "github.com/yttydcs/myflowhub-server/internal/handler/exec"
 	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
 	flowhandler "github.com/yttydcs/myflowhub-server/internal/handler/flow"
-	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
 	"github.com/yttydcs/myflowhub-server/subproto/forward"
 	"github.com/yttydcs/myflowhub-server/subproto/management"
+	"github.com/yttydcs/myflowhub-server/subproto/topicbus"
 	varstore "github.com/yttydcs/myflowhub-server/subproto/varstore"
 )
 

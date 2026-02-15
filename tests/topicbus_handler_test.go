@@ -8,7 +8,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
+	"github.com/yttydcs/myflowhub-server/subproto/topicbus"
 )
 
 func TestTopicBusSubscribeListUnsubscribe(t *testing.T) {
@@ -220,4 +220,3 @@ func isAction(payload []byte, want string) bool {
 	}
 	return msg.Action == want
 }
-
