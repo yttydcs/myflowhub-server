@@ -3,7 +3,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 
 范围与格式
 ----------
-- 仅描述当前 `internal/handler/auth` 的实现；不包含 login_server 旧 credential 流程。
+- 仅描述当前 `internal/handler/auth` 的实现；已移除 login_server 旧 credential 流程。
 - 消息统一格式：`{"action":"<name>","data":{...}}`，响应 action = `<req>_resp`，状态码在 data.code。
 - 签名算法：ES256（P256 + SHA256），公钥/私钥 DER 以 base64 编码。
 - SubProto 固定 2；未认证连接 `SourceID=0` 仅放行子协议 2，其余丢弃。
