@@ -11,9 +11,9 @@ import (
 	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
 	flowhandler "github.com/yttydcs/myflowhub-server/internal/handler/flow"
 	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
-	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
 	"github.com/yttydcs/myflowhub-server/subproto/forward"
 	"github.com/yttydcs/myflowhub-server/subproto/management"
+	varstore "github.com/yttydcs/myflowhub-server/subproto/varstore"
 )
 
 // Dispatcher 抽象 hub_server 装配所需的最小 dispatcher 能力。

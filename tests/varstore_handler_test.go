@@ -11,7 +11,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	"github.com/yttydcs/myflowhub-server/subproto/varstore"
 )
 
 type sentFrame struct {

@@ -16,7 +16,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/server"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
-	vartstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	vartstore "github.com/yttydcs/myflowhub-server/subproto/varstore"
 )
 
 // Integration: Root (node=1) + Hub (self-register) + set at hub, get at root.

@@ -1,6 +1,6 @@
 package varstore
 
-import protocol "github.com/yttydcs/myflowhub-server/protocol/varstore"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/varstore"
 
 const (
 	varActionSet           = protocol.ActionSet
