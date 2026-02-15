@@ -9,7 +9,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/subproto"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
 type ManagementHandler struct {
@@ -74,7 +74,7 @@ func (h *ManagementHandler) sendActionResp(ctx context.Context, conn core.IConne
 	raw, _ := json.Marshal(data)
 	resp.Data = raw
 	body, _ := json.Marshal(resp)
-	handler.SendResponse(ctx, h.log, conn, req, body, h.SubProto())
+	kit.SendResponse(ctx, h.log, conn, req, body, h.SubProto())
 }
 
 func (h *ManagementHandler) forwardCmdByHeaderTarget(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) (bool, int, string) {

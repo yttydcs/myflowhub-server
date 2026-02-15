@@ -17,8 +17,8 @@ import (
 	"github.com/yttydcs/myflowhub-core/server"
 	"github.com/yttydcs/myflowhub-server/internal/handler"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
-	"github.com/yttydcs/myflowhub-server/internal/handler/management"
 	vartstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	"github.com/yttydcs/myflowhub-server/subproto/management"
 )
 
 // Integration: Root (node=1) -> LoginServer (node=100) -> Hub (self-register) -> Client (Echo ping).
