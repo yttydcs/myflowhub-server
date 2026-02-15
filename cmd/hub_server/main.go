@@ -18,14 +18,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
-	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
-	exechandler "github.com/yttydcs/myflowhub-server/internal/handler/exec"
-	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
-	flowhandler "github.com/yttydcs/myflowhub-server/internal/handler/flow"
-	"github.com/yttydcs/myflowhub-server/internal/handler/management"
-	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
-	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	"github.com/yttydcs/myflowhub-server/modules"
 )
 
 type options struct {
@@ -81,37 +74,15 @@ func main() {
 		log.Error("build dispatcher failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(management.NewHandler(log)); err != nil {
-		log.Error("register management handler failed", "err", err)
+	set, err := modules.DefaultHub(cfg, log)
+	if err != nil {
+		log.Error("build hub modules failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(authhandler.NewLoginHandlerWithConfig(cfg, log)); err != nil {
-		log.Error("register login handler failed", "err", err)
+	if err := modules.RegisterAll(dispatcher, set); err != nil {
+		log.Error("register hub modules failed", "err", err)
 		os.Exit(1)
 	}
-	if err := dispatcher.RegisterHandler(varstore.NewVarStoreHandlerWithConfig(cfg, log)); err != nil {
-		log.Error("register varstore handler failed", "err", err)
-		os.Exit(1)
-	}
-	if err := dispatcher.RegisterHandler(topicbus.NewTopicBusHandlerWithConfig(cfg, log)); err != nil {
-		log.Error("register topicbus handler failed", "err", err)
-		os.Exit(1)
-	}
-	execH := exechandler.NewHandlerWithConfig(cfg, log)
-	if err := dispatcher.RegisterHandler(execH); err != nil {
-		log.Error("register exec handler failed", "err", err)
-		os.Exit(1)
-	}
-	flowH := flowhandler.NewHandlerWithConfig(cfg, log)
-	if err := dispatcher.RegisterHandler(flowH); err != nil {
-		log.Error("register flow handler failed", "err", err)
-		os.Exit(1)
-	}
-	if err := dispatcher.RegisterHandler(filehandler.NewHandlerWithConfig(cfg, log)); err != nil {
-		log.Error("register file handler failed", "err", err)
-		os.Exit(1)
-	}
-	dispatcher.RegisterDefaultHandler(handler.NewDefaultForwardHandler(cfg, log))
 
 	lst := tcp_listener.New(opts.addr, tcp_listener.Options{
 		KeepAlive:       true,
@@ -142,7 +113,7 @@ func main() {
 		log.Error("start server failed", "err", err)
 		os.Exit(1)
 	}
-	flowH.BindServer(srv)
+	modules.BindServerHooks(srv, set)
 	log.Info("hub server started", "addr", opts.addr, "node_id", opts.nodeID, "parent", opts.parentAddr)
 
 	waitSignal()
