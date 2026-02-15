@@ -15,13 +15,13 @@ import (
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
 	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 	vartstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	"github.com/yttydcs/myflowhub-server/subproto/forward"
 	"github.com/yttydcs/myflowhub-server/subproto/management"
 )
 
-// Integration: Root (node=1) -> LoginServer (node=100) -> Hub (self-register) -> Client (Echo ping).
+// Integration: Root (node=1) -> Hub (self-register) -> Client (Echo ping).
 func TestRootHubPing(t *testing.T) {
 	rootAddr := freeAddr()
 	hubAddr := freeAddr()
@@ -150,7 +150,7 @@ func makeProcess(t *testing.T, cfg core.IConfig, handlers []core.ISubProcess) co
 			t.Fatalf("register handler: %v", err)
 		}
 	}
-	dp.RegisterDefaultHandler(handler.NewDefaultForwardHandler(cfg, nil))
+	dp.RegisterDefaultHandler(forward.NewDefaultForwardHandler(cfg, nil))
 	return dp
 }
 

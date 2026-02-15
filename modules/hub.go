@@ -6,13 +6,13 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
 	exechandler "github.com/yttydcs/myflowhub-server/internal/handler/exec"
 	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
 	flowhandler "github.com/yttydcs/myflowhub-server/internal/handler/flow"
 	"github.com/yttydcs/myflowhub-server/internal/handler/topicbus"
 	varstore "github.com/yttydcs/myflowhub-server/internal/handler/varstore"
+	"github.com/yttydcs/myflowhub-server/subproto/forward"
 	"github.com/yttydcs/myflowhub-server/subproto/management"
 )
 
@@ -41,7 +41,7 @@ func DefaultHub(cfg core.IConfig, log *slog.Logger) (Set, error) {
 			flowhandler.NewHandlerWithConfig(cfg, log),
 			filehandler.NewHandlerWithConfig(cfg, log),
 		},
-		Default: handler.NewDefaultForwardHandler(cfg, log),
+		Default: forward.NewDefaultForwardHandler(cfg, log),
 	}
 	if err := validateSet(set); err != nil {
 		return Set{}, err

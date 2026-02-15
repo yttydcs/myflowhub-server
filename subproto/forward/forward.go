@@ -1,4 +1,4 @@
-package handler
+package forward
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
 // DefaultForwardHandler 丢弃未知子协议，或按配置转发到指定节点；若未配置则默认尝试转发给父节点。
@@ -85,7 +86,7 @@ func (h *DefaultForwardHandler) OnReceive(ctx context.Context, conn core.IConnec
 	}
 	targetNode := h.resolveTarget(hdr.SubProto())
 	if h.forward && targetNode != 0 {
-		targetHeader := CloneWithTarget(hdr, targetNode)
+		targetHeader := kit.CloneWithTarget(hdr, targetNode)
 		if targetHeader == nil {
 			h.log.Warn("cannot clone header for forwarding")
 			return
@@ -146,7 +147,7 @@ func (h *DefaultForwardHandler) forwardToParent(ctx context.Context, srv core.IS
 		h.log.Debug("no parent connection, drop unknown subproto", "subproto", hdr.SubProto())
 		return
 	}
-	clone := CloneRequest(hdr)
+	clone := kit.CloneRequest(hdr)
 	if clone == nil {
 		h.log.Warn("cannot clone header for parent forward")
 		return

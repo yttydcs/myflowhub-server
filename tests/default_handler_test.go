@@ -8,7 +8,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/internal/handler"
+	"github.com/yttydcs/myflowhub-server/subproto/forward"
 )
 
 // 验证：未配置 default forward 时，默认转发到父节点
@@ -22,7 +22,7 @@ func TestDefaultHandlerForwardToParentByDefault(t *testing.T) {
 	srv := &stubServer{nodeID: 1, cm: cm}
 	ctx := core.WithServerContext(context.Background(), srv)
 
-	h := handler.NewDefaultForwardHandler(config.NewMap(nil), nil)
+	h := forward.NewDefaultForwardHandler(config.NewMap(nil), nil)
 	hdr := (&header.HeaderTcp{}).WithSubProto(99).WithTargetID(123)
 	h.OnReceive(ctx, parent, hdr, []byte("data"))
 
@@ -46,7 +46,7 @@ func TestDefaultHandlerDropWhenDisabled(t *testing.T) {
 	cfg := config.NewMap(map[string]string{
 		config.KeyDefaultForwardEnable: "false",
 	})
-	h := handler.NewDefaultForwardHandler(cfg, nil)
+	h := forward.NewDefaultForwardHandler(cfg, nil)
 	hdr := (&header.HeaderTcp{}).WithSubProto(99).WithTargetID(123)
 	h.OnReceive(ctx, parent, hdr, []byte("data"))
 	if len(srv.sends) != 0 {
