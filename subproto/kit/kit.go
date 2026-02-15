@@ -1,4 +1,4 @@
-package handler
+package kit
 
 import (
 	"context"
@@ -6,25 +6,40 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
 // CloneRequest 封装请求头部的克隆操作。
 func CloneRequest(h core.IHeader) *header.HeaderTcp {
-	return kit.CloneRequest(h)
+	return header.CloneToTCP(h)
 }
 
 // CloneWithTarget 克隆头部并重写目标节点。
 func CloneWithTarget(h core.IHeader, target uint32) *header.HeaderTcp {
-	return kit.CloneWithTarget(h, target)
+	clone := header.CloneToTCP(h)
+	if clone != nil {
+		clone.WithTargetID(target)
+	}
+	return clone
 }
 
 // BuildResponse 根据请求头构建响应头，并指定子协议与载荷长度。
 func BuildResponse(req core.IHeader, payloadLen uint32, sub uint8) core.IHeader {
-	return kit.BuildResponse(req, payloadLen, sub)
+	return header.BuildTCPResponse(req, payloadLen, sub)
 }
 
 // SendResponse 编码并通过发送管线发送响应；若无法取得 server，则回退直接写连接。
 func SendResponse(ctx context.Context, log *slog.Logger, conn core.IConnection, req core.IHeader, payload []byte, sub uint8) {
-	kit.SendResponse(ctx, log, conn, req, payload, sub)
+	codec := header.HeaderTcpCodec{}
+	resp := BuildResponse(req, uint32(len(payload)), sub)
+	if srv := core.ServerFromContext(ctx); srv != nil {
+		if err := srv.Send(ctx, conn.ID(), resp, payload); err != nil && log != nil {
+			log.Error("发送响应失败", "err", err)
+		}
+		return
+	}
+	if err := conn.SendWithHeader(resp, payload, codec); err != nil {
+		if log != nil {
+			log.Error("发送响应失败", "err", err)
+		}
+	}
 }
