@@ -7,8 +7,8 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
-	filehandler "github.com/yttydcs/myflowhub-server/internal/handler/file"
 	exechandler "github.com/yttydcs/myflowhub-server/subproto/exec"
+	filehandler "github.com/yttydcs/myflowhub-server/subproto/file"
 	flowhandler "github.com/yttydcs/myflowhub-server/subproto/flow"
 	"github.com/yttydcs/myflowhub-server/subproto/forward"
 	"github.com/yttydcs/myflowhub-server/subproto/management"

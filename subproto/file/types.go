@@ -1,6 +1,6 @@
 package file
 
-import protocol "github.com/yttydcs/myflowhub-server/protocol/file"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/file"
 
 // 子协议：file（节点间文件传输）。
 const SubProtoFile uint8 = protocol.SubProtoFile
