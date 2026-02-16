@@ -24,7 +24,7 @@ type LoginHandler struct {
 
 	mu          sync.RWMutex
 	whitelist   map[string]bindingRecord // deviceID -> record
-	pendingConn map[string]string        // deviceID -> connID (in-flight assist)
+	pendingConn map[string]pendingInfo   // deviceID -> pending downstream info (in-flight assist)
 
 	authNode uint32
 
@@ -34,6 +34,12 @@ type LoginHandler struct {
 	trustedNode map[uint32][]byte
 
 	disablePersist bool
+}
+
+type pendingInfo struct {
+	connID  string
+	msgID   uint32
+	traceID uint32
 }
 
 func NewLoginHandler(log *slog.Logger) *LoginHandler {
@@ -47,7 +53,7 @@ func NewLoginHandlerWithConfig(cfg core.IConfig, log *slog.Logger) *LoginHandler
 	h := &LoginHandler{
 		log:         log,
 		whitelist:   make(map[string]bindingRecord),
-		pendingConn: make(map[string]string),
+		pendingConn: make(map[string]pendingInfo),
 	}
 	if cfg != nil {
 		if v, _ := cfg.Get("auth.disable_persist"); strings.EqualFold(strings.TrimSpace(v), "true") {

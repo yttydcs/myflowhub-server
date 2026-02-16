@@ -338,7 +338,9 @@ func TestLoginHandlerAssistRegisterRespFallback(t *testing.T) {
 
 	// device -> A: register (A should forward assist_register to parent and set pending)
 	regMsg := mustJSON(map[string]any{"action": "register", "data": map[string]any{"device_id": "dev-1"}})
-	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	const reqMsgID uint32 = 123
+	const reqTraceID uint32 = 456
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithMsgID(reqMsgID).WithTraceID(reqTraceID)
 	h.OnReceive(ctx, device, hdr, regMsg)
 
 	if len(device.sent) != 0 {
@@ -359,6 +361,15 @@ func TestLoginHandlerAssistRegisterRespFallback(t *testing.T) {
 
 	if len(device.sent) != 1 {
 		t.Fatalf("expected 1 register_resp, got %d", len(device.sent))
+	}
+	if device.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if device.sent[0].hdr.GetMsgID() != reqMsgID {
+		t.Fatalf("expected msg_id=%d, got %d", reqMsgID, device.sent[0].hdr.GetMsgID())
+	}
+	if device.sent[0].hdr.GetTraceID() != reqTraceID {
+		t.Fatalf("expected trace_id=%d, got %d", reqTraceID, device.sent[0].hdr.GetTraceID())
 	}
 	var msg struct {
 		Action string          `json:"action"`
@@ -388,7 +399,9 @@ func TestLoginHandlerAssistLoginRespFallback(t *testing.T) {
 
 	// device -> A: login (A should forward assist_login to parent and set pending)
 	loginMsg := mustJSON(map[string]any{"action": "login", "data": map[string]any{"device_id": "dev-1", "ts": 1, "nonce": "n1", "sig": "s1", "alg": "ES256"}})
-	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	const reqMsgID uint32 = 789
+	const reqTraceID uint32 = 654
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithMsgID(reqMsgID).WithTraceID(reqTraceID)
 	h.OnReceive(ctx, device, hdr, loginMsg)
 
 	if len(device.sent) != 0 {
@@ -409,9 +422,98 @@ func TestLoginHandlerAssistLoginRespFallback(t *testing.T) {
 	if len(device.sent) != 1 {
 		t.Fatalf("expected 1 login_resp, got %d", len(device.sent))
 	}
+	if device.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if device.sent[0].hdr.GetMsgID() != reqMsgID {
+		t.Fatalf("expected msg_id=%d, got %d", reqMsgID, device.sent[0].hdr.GetMsgID())
+	}
+	if device.sent[0].hdr.GetTraceID() != reqTraceID {
+		t.Fatalf("expected trace_id=%d, got %d", reqTraceID, device.sent[0].hdr.GetTraceID())
+	}
 	var msg struct {
 		Action string          `json:"action"`
 		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(device.sent[0].payload, &msg)
+	if msg.Action != "login_resp" {
+		t.Fatalf("expected login_resp, got %s", msg.Action)
+	}
+}
+
+func TestLoginHandlerAssistQueryCredentialRespFallbackPreservesHeader(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := newLoginHandlerForTest(cfg)
+	cm := connmgr.New()
+
+	parent := newAuthConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+
+	device := newAuthConn("device")
+	_ = cm.Add(device)
+
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	// prepare: register and respond with empty pubkey, so login will need assist_query_credential
+	regMsg := mustJSON(map[string]any{"action": "register", "data": map[string]any{"device_id": "dev-1"}})
+	regHdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithMsgID(1).WithTraceID(2)
+	h.OnReceive(ctx, device, regHdr, regMsg)
+
+	regResp := mustJSON(map[string]any{
+		"action": "assist_register_resp",
+		"data": map[string]any{
+			"code":      1,
+			"msg":       "ok",
+			"device_id": "dev-1",
+			"node_id":   5,
+		},
+	})
+	respHdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	h.OnReceive(ctx, parent, respHdr, regResp)
+	device.sent = nil
+
+	// device -> A: login (A should forward assist_query_credential to parent and set pending)
+	const loginMsgID uint32 = 1001
+	const loginTraceID uint32 = 2002
+	loginHdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithMsgID(loginMsgID).WithTraceID(loginTraceID)
+	loginMsg := mustJSON(map[string]any{"action": "login", "data": map[string]any{"device_id": "dev-1", "ts": 1, "nonce": "n1", "sig": "s1", "alg": "ES256"}})
+	h.OnReceive(ctx, device, loginHdr, loginMsg)
+
+	if len(device.sent) != 0 {
+		t.Fatalf("expected no immediate login_resp, got %d", len(device.sent))
+	}
+
+	// parent -> A: assist_query_credential_resp (A must consume and fallback to login_resp to device, preserving msg_id/trace_id)
+	queryResp := mustJSON(map[string]any{
+		"action": "assist_query_credential_resp",
+		"data": map[string]any{
+			"code":      1,
+			"msg":       "ok",
+			"device_id": "dev-1",
+			"node_id":   5,
+			"pubkey":    "invalid",
+			"node_pub":  "invalid",
+		},
+	})
+	h.OnReceive(ctx, parent, respHdr, queryResp)
+
+	if len(device.sent) != 1 {
+		t.Fatalf("expected 1 login_resp, got %d", len(device.sent))
+	}
+	if device.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if device.sent[0].hdr.GetMsgID() != loginMsgID {
+		t.Fatalf("expected msg_id=%d, got %d", loginMsgID, device.sent[0].hdr.GetMsgID())
+	}
+	if device.sent[0].hdr.GetTraceID() != loginTraceID {
+		t.Fatalf("expected trace_id=%d, got %d", loginTraceID, device.sent[0].hdr.GetTraceID())
+	}
+	var msg struct {
+		Action string `json:"action"`
 	}
 	_ = json.Unmarshal(device.sent[0].payload, &msg)
 	if msg.Action != "login_resp" {

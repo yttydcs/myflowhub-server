@@ -32,7 +32,7 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 		rec, ok := a.h.lookup(req.DeviceID)
 		if (!ok || len(rec.PubKey) == 0) && a.h.selectAuthority(ctx) != nil {
 			// 向上查询公钥
-			a.h.setPending(req.DeviceID, conn.ID())
+			a.h.setPending(req.DeviceID, conn.ID(), hdr)
 			a.h.forward(ctx, a.h.selectAuthority(ctx), actionAssistQueryCred, queryCredData{DeviceID: req.DeviceID, NodeID: req.NodeID})
 			return
 		}
@@ -65,7 +65,7 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 	// local check
 	if rec, ok := a.h.lookup(req.DeviceID); ok {
 		if len(rec.PubKey) == 0 && a.h.selectAuthority(ctx) != nil {
-			a.h.setPending(req.DeviceID, conn.ID())
+			a.h.setPending(req.DeviceID, conn.ID(), hdr)
 			a.h.forward(ctx, a.h.selectAuthority(ctx), actionAssistQueryCred, queryCredData{DeviceID: req.DeviceID, NodeID: req.NodeID})
 			return
 		}
@@ -88,7 +88,7 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 	// not found locally, try authority
 	authority := a.h.selectAuthority(ctx)
 	if authority != nil {
-		a.h.setPending(req.DeviceID, conn.ID())
+		a.h.setPending(req.DeviceID, conn.ID(), hdr)
 		a.h.forward(ctx, authority, actionAssistLogin, req)
 		return
 	}
@@ -123,7 +123,7 @@ func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := h.popPending(resp.DeviceID)
+	pending, ok := h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -131,7 +131,7 @@ func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage
 	if srv == nil {
 		return
 	}
-	if c, found := srv.ConnManager().Get(connID); found {
+	if c, found := srv.ConnManager().Get(pending.connID); found {
 		if resp.Code == 1 {
 			var pubRaw []byte
 			if pk := strings.TrimSpace(resp.PubKey); pk != "" {
@@ -150,7 +150,7 @@ func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
-		h.sendResp(ctx, c, nil, actionLoginResp, resp)
+		h.sendResp(ctx, c, h.buildPendingRespHeader(ctx, pending), actionLoginResp, resp)
 	}
 }
 

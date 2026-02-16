@@ -293,7 +293,9 @@ func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 	ctx := core.WithServerContext(context.Background(), srv)
 
 	req := getJSON("get", "temp", 5)
-	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(2).WithTargetID(0)
+	const reqMsgID uint32 = 111
+	const reqTraceID uint32 = 222
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(2).WithTargetID(0).WithMsgID(reqMsgID).WithTraceID(reqTraceID)
 	h.OnReceive(ctx, child, hdr, req)
 
 	if len(parent.sent) == 0 {
@@ -307,6 +309,7 @@ func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 
 	// child should have received get_resp
 	found := false
+	var gotHdr core.IHeader
 	for _, f := range child.sent {
 		var msg struct {
 			Action string          `json:"action"`
@@ -315,11 +318,21 @@ func TestVarStoreGetMissForwardAndCache(t *testing.T) {
 		_ = json.Unmarshal(f.payload, &msg)
 		if msg.Action == "get_resp" {
 			found = true
+			gotHdr = f.hdr
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("expected get_resp to child")
+	}
+	if gotHdr == nil {
+		t.Fatalf("expected get_resp header to child")
+	}
+	if gotHdr.GetMsgID() != reqMsgID {
+		t.Fatalf("expected msg_id=%d, got %d", reqMsgID, gotHdr.GetMsgID())
+	}
+	if gotHdr.GetTraceID() != reqTraceID {
+		t.Fatalf("expected trace_id=%d, got %d", reqTraceID, gotHdr.GetTraceID())
 	}
 }
 

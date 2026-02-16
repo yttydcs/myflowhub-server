@@ -41,7 +41,7 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := a.h.popPending(resp.DeviceID)
+	pending, ok := a.h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -49,7 +49,7 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 	if srv == nil {
 		return
 	}
-	if c, found := srv.ConnManager().Get(connID); found {
+	if c, found := srv.ConnManager().Get(pending.connID); found {
 		var pubRaw []byte
 		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
 			if _, raw, err := parseECPubKey(pk); err == nil {
@@ -65,7 +65,7 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
-		a.h.sendResp(ctx, c, nil, actionRegisterResp, resp)
+		a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
 	}
 }
 
@@ -84,7 +84,7 @@ func (a *assistRegisterRespAction) Handle(ctx context.Context, _ core.IConnectio
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := a.h.popPending(resp.DeviceID)
+	pending, ok := a.h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -92,7 +92,7 @@ func (a *assistRegisterRespAction) Handle(ctx context.Context, _ core.IConnectio
 	if srv == nil {
 		return
 	}
-	if c, found := srv.ConnManager().Get(connID); found {
+	if c, found := srv.ConnManager().Get(pending.connID); found {
 		var pubRaw []byte
 		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
 			if _, raw, err := parseECPubKey(pk); err == nil {
@@ -108,7 +108,7 @@ func (a *assistRegisterRespAction) Handle(ctx context.Context, _ core.IConnectio
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
-		a.h.sendResp(ctx, c, nil, actionRegisterResp, resp)
+		a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
 	}
 }
 
@@ -163,7 +163,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	}
 	authority := h.selectAuthority(ctx)
 	if authority != nil {
-		h.setPending(req.DeviceID, conn.ID())
+		h.setPending(req.DeviceID, conn.ID(), hdr)
 		h.forward(ctx, authority, actionAssistRegister, req)
 		return
 	}
@@ -196,7 +196,7 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := h.popPending(resp.DeviceID)
+	pending, ok := h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -204,7 +204,7 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 	if srv == nil {
 		return
 	}
-	if c, found := srv.ConnManager().Get(connID); found {
+	if c, found := srv.ConnManager().Get(pending.connID); found {
 		var pubRaw []byte
 		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
 			if _, raw, err := parseECPubKey(pk); err == nil {
@@ -220,7 +220,7 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
-		h.sendResp(ctx, c, nil, actionRegisterResp, resp)
+		h.sendResp(ctx, c, h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
 		h.persistState()
 	}
 }

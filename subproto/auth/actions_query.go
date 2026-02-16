@@ -54,7 +54,7 @@ func (a *assistQueryRespAction) Handle(ctx context.Context, _ core.IConnection, 
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := a.h.popPending(resp.DeviceID)
+	pending, ok := a.h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -62,7 +62,7 @@ func (a *assistQueryRespAction) Handle(ctx context.Context, _ core.IConnection, 
 	if srv == nil {
 		return
 	}
-	if c, found := srv.ConnManager().Get(connID); found {
+	if c, found := srv.ConnManager().Get(pending.connID); found {
 		if resp.Code == 1 {
 			var pubRaw []byte
 			if pk := strings.TrimSpace(resp.PubKey); pk != "" {
@@ -76,10 +76,10 @@ func (a *assistQueryRespAction) Handle(ctx context.Context, _ core.IConnection, 
 			if strings.TrimSpace(resp.PubKey) != "" {
 				a.h.addTrustedNode(resp.NodeID, resp.PubKey)
 			}
-			a.h.sendResp(ctx, c, nil, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: resp.DeviceID, NodeID: resp.NodeID, Role: resp.Role, Perms: resp.Perms, PubKey: encodePubKey(pubRaw), NodePub: resp.PubKey})
+			a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: resp.DeviceID, NodeID: resp.NodeID, Role: resp.Role, Perms: resp.Perms, PubKey: encodePubKey(pubRaw), NodePub: resp.PubKey})
 			return
 		}
-		a.h.sendResp(ctx, c, nil, actionLoginResp, respData{Code: resp.Code, Msg: resp.Msg})
+		a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionLoginResp, respData{Code: resp.Code, Msg: resp.Msg})
 	}
 }
 

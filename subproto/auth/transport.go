@@ -9,13 +9,23 @@ import (
 	"github.com/yttydcs/myflowhub-core/header"
 )
 
-func (h *LoginHandler) setPending(deviceID, connID string) {
+func (h *LoginHandler) setPending(deviceID, connID string, hdr core.IHeader) {
+	var msgID uint32
+	var traceID uint32
+	if hdr != nil {
+		msgID = hdr.GetMsgID()
+		traceID = hdr.GetTraceID()
+	}
 	h.mu.Lock()
-	h.pendingConn[deviceID] = connID
+	h.pendingConn[deviceID] = pendingInfo{
+		connID:  connID,
+		msgID:   msgID,
+		traceID: traceID,
+	}
 	h.mu.Unlock()
 }
 
-func (h *LoginHandler) popPending(deviceID string) (string, bool) {
+func (h *LoginHandler) popPending(deviceID string) (pendingInfo, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	id, ok := h.pendingConn[deviceID]
@@ -23,6 +33,11 @@ func (h *LoginHandler) popPending(deviceID string) (string, bool) {
 		delete(h.pendingConn, deviceID)
 	}
 	return id, ok
+}
+
+func (h *LoginHandler) buildPendingRespHeader(ctx context.Context, pending pendingInfo) core.IHeader {
+	hdr := h.buildHeader(ctx, nil)
+	return hdr.WithMsgID(pending.msgID).WithTraceID(pending.traceID)
 }
 
 func (h *LoginHandler) sendResp(ctx context.Context, conn core.IConnection, reqHdr core.IHeader, action string, data respData) {

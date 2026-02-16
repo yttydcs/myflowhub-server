@@ -73,6 +73,14 @@ const (
 type pendingSubscriber struct {
 	connID     string
 	subscriber uint32
+	msgID      uint32
+	traceID    uint32
+}
+
+type pendingWaiter struct {
+	connID  string
+	msgID   uint32
+	traceID uint32
 }
 
 type connClosedEvent struct {
