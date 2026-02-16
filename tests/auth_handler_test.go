@@ -320,6 +320,105 @@ func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
 	}
 }
 
+func TestLoginHandlerAssistRegisterRespFallback(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := newLoginHandlerForTest(cfg)
+	cm := connmgr.New()
+
+	parent := newAuthConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+
+	device := newAuthConn("device")
+	_ = cm.Add(device)
+
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	// device -> A: register (A should forward assist_register to parent and set pending)
+	regMsg := mustJSON(map[string]any{"action": "register", "data": map[string]any{"device_id": "dev-1"}})
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	h.OnReceive(ctx, device, hdr, regMsg)
+
+	if len(device.sent) != 0 {
+		t.Fatalf("expected no immediate register_resp, got %d", len(device.sent))
+	}
+
+	// parent -> A: assist_register_resp (A must consume and fallback to register_resp to device)
+	respMsg := mustJSON(map[string]any{
+		"action": "assist_register_resp",
+		"data": map[string]any{
+			"code":      1,
+			"msg":       "ok",
+			"device_id": "dev-1",
+			"node_id":   5,
+		},
+	})
+	h.OnReceive(ctx, parent, hdr, respMsg)
+
+	if len(device.sent) != 1 {
+		t.Fatalf("expected 1 register_resp, got %d", len(device.sent))
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(device.sent[0].payload, &msg)
+	if msg.Action != "register_resp" {
+		t.Fatalf("expected register_resp, got %s", msg.Action)
+	}
+}
+
+func TestLoginHandlerAssistLoginRespFallback(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := newLoginHandlerForTest(cfg)
+	cm := connmgr.New()
+
+	parent := newAuthConn("parent")
+	parent.SetMeta(core.MetaRoleKey, core.RoleParent)
+	parent.SetMeta("nodeID", uint32(99))
+	_ = cm.Add(parent)
+
+	device := newAuthConn("device")
+	_ = cm.Add(device)
+
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	// device -> A: login (A should forward assist_login to parent and set pending)
+	loginMsg := mustJSON(map[string]any{"action": "login", "data": map[string]any{"device_id": "dev-1", "ts": 1, "nonce": "n1", "sig": "s1", "alg": "ES256"}})
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
+	h.OnReceive(ctx, device, hdr, loginMsg)
+
+	if len(device.sent) != 0 {
+		t.Fatalf("expected no immediate login_resp, got %d", len(device.sent))
+	}
+
+	// parent -> A: assist_login_resp (A must consume and fallback to login_resp to device)
+	respMsg := mustJSON(map[string]any{
+		"action": "assist_login_resp",
+		"data": map[string]any{
+			"code":      4001,
+			"msg":       "invalid signature",
+			"device_id": "dev-1",
+		},
+	})
+	h.OnReceive(ctx, parent, hdr, respMsg)
+
+	if len(device.sent) != 1 {
+		t.Fatalf("expected 1 login_resp, got %d", len(device.sent))
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(device.sent[0].payload, &msg)
+	if msg.Action != "login_resp" {
+		t.Fatalf("expected login_resp, got %s", msg.Action)
+	}
+}
+
 // --- helpers ---
 
 type authConn struct {

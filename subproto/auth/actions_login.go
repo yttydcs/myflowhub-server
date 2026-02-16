@@ -102,6 +102,20 @@ type loginRespAction struct {
 
 func (a *loginRespAction) Name() string { return actionLoginResp }
 func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+	a.h.handleLoginResp(ctx, data)
+}
+
+type assistLoginRespAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
+
+func (a *assistLoginRespAction) Name() string { return actionAssistLoginResp }
+func (a *assistLoginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+	a.h.handleLoginResp(ctx, data)
+}
+
+func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage) {
 	var resp respData
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return
@@ -109,7 +123,7 @@ func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core
 	if resp.DeviceID == "" {
 		return
 	}
-	connID, ok := a.h.popPending(resp.DeviceID)
+	connID, ok := h.popPending(resp.DeviceID)
 	if !ok {
 		return
 	}
@@ -125,18 +139,18 @@ func (a *loginRespAction) Handle(ctx context.Context, _ core.IConnection, _ core
 					pubRaw = raw
 				}
 			}
-			a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
-			a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
-			a.h.applyHubID(ctx, c, resp.HubID)
+			h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
+			h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
+			h.applyHubID(ctx, c, resp.HubID)
 			if strings.TrimSpace(resp.PubKey) != "" {
-				a.h.addTrustedNode(resp.NodeID, resp.PubKey)
+				h.addTrustedNode(resp.NodeID, resp.PubKey)
 			}
 			// 此分支没有原始 device 签名，避免上行；由实际验证节点负责上报
 		}
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
-		a.h.sendResp(ctx, c, nil, actionLoginResp, resp)
+		h.sendResp(ctx, c, nil, actionLoginResp, resp)
 	}
 }
 
@@ -145,5 +159,6 @@ func registerLoginActions(h *LoginHandler) []core.SubProcessAction {
 		&loginAction{h: h, assisted: false},
 		&loginAction{h: h, assisted: true},
 		&loginRespAction{h: h},
+		&assistLoginRespAction{h: h},
 	}
 }

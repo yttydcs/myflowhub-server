@@ -69,11 +69,55 @@ func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ c
 	}
 }
 
+type assistRegisterRespAction struct {
+	subproto.BaseAction
+	h *LoginHandler
+}
+
+func (a *assistRegisterRespAction) Name() string      { return actionAssistRegisterResp }
+func (a *assistRegisterRespAction) RequireAuth() bool { return false }
+func (a *assistRegisterRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+	var resp respData
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+	if resp.DeviceID == "" {
+		return
+	}
+	connID, ok := a.h.popPending(resp.DeviceID)
+	if !ok {
+		return
+	}
+	srv := core.ServerFromContext(ctx)
+	if srv == nil {
+		return
+	}
+	if c, found := srv.ConnManager().Get(connID); found {
+		var pubRaw []byte
+		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
+			if _, raw, err := parseECPubKey(pk); err == nil {
+				pubRaw = raw
+			}
+		}
+		a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
+		a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
+		a.h.applyHubID(ctx, c, resp.HubID)
+		if strings.TrimSpace(resp.NodePub) != "" {
+			a.h.addTrustedNode(resp.NodeID, resp.NodePub)
+		}
+		if resp.HubID == 0 {
+			resp.HubID = srv.NodeID()
+		}
+		a.h.sendResp(ctx, c, nil, actionRegisterResp, resp)
+	}
+}
+
 func registerRegisterActions(h *LoginHandler) []core.SubProcessAction {
 	return []core.SubProcessAction{
 		&registerAction{h: h, assisted: false},
 		&registerAction{h: h, assisted: true},
 		&registerRespAction{h: h},
+		&assistRegisterRespAction{h: h},
 	}
 }
 
