@@ -141,4 +141,6 @@
 
 ## 执行记录
 - 2026-02-16：创建本 workflow 分支与计划文档（待确认后进入 3.2）。
-
+- 2026-02-16：确认 plan.md，进入 3.2；环境准备（不进 git）：在 `worktrees/pr7-auth-assist-resp/` 下创建 `MyFlowHub-Core`、`MyFlowHub-Proto` Junction 指向 `repo/`，满足 `go.mod replace ../MyFlowHub-*`。
+- 2026-02-16：完成 AR1/AR2（补齐 `assist_*_resp` action + 单测）；提交：`5094e26`。
+- 2026-02-16：完成 AR3（Windows 回归通过）：`go test ./... -count=1 -p 1`。
