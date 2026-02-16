@@ -1,159 +1,144 @@
-# Plan - modules/defaultset 引入 build tags（裁切默认子协议集合）（PR6-BuildTags）
+# Plan - Auth assist 响应收敛（assist_*_resp 支持）（PR7-Auth-AssistResp）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`refactor/server-defaultset-buildtags`
-- Worktree：`d:\project\MyFlowHub3\worktrees\pr6-server-buildtags\MyFlowHub-Server`
+- 分支：`fix/server-auth-assist-resp`
+- Worktree：`d:\project\MyFlowHub3\worktrees\pr7-auth-assist-resp\MyFlowHub-Server`
 - 参考总目标：`d:\project\MyFlowHub3\target.md`
-- 约束：commit 信息使用中文（前缀如 `refactor:` 可英文）
+- 约束：commit 信息使用中文（前缀如 `fix:` 可英文）
 
-## 当前状态
-- 目前 hub_server 默认启用集合由 `modules.DefaultHub(cfg, log)` 提供。
-- 默认集合的“具体模块列表”已解耦到 `modules/defaultset`（避免 `modules` 直接 import 所有 `subproto/*`）。
-- `subproto/*` 已对齐为公开可装配子协议模块（不再使用 `internal/handler/*`）。
-- 下一步（见 `target.md`）需要支持“子协议可裁切/可组装”，本 PR 先在 **默认集合** 层面引入 build tags，做到“编译期裁切默认集合”，同时保持默认行为不变。
-
-> 环境备注（不进 git）：本仓库 `go.mod` 使用 `replace ../MyFlowHub-Core`、`../MyFlowHub-Proto`。  
-> 在本 worktree 布局下，需要在 `d:\project\MyFlowHub3\worktrees\pr6-server-buildtags\` 下存在同名目录。  
-> 当前通过 Junction 指向 `d:\project\MyFlowHub3\repo\MyFlowHub-Core` / `d:\project\MyFlowHub3\repo\MyFlowHub-Proto` 满足。
+## 当前状态（事实）
+- 文档 `docs/2-auth.md` 定义了 `assist_register_resp`、`assist_login_resp` 等响应动作。
+- 代码 `subproto/auth` 当前会发送 `assist_register_resp` / `assist_login_resp`（权威节点处理 `assist_*` 时）。
+- 但 `subproto/auth` 的 action 注册仅包含 `register_resp` / `login_resp`，缺少对上述 `assist_*_resp` 的接收处理：在“非权威节点向上 assist，请求返回时”的链路下，响应会被当作 unknown action 丢弃，导致下游设备/子节点得不到 `*_resp`。
 
 ## 1) 需求分析
 ### 目标
-1) 为 `modules/defaultset` 引入 build tags，使 hub_server 的默认启用集合支持**编译期裁切**（source-level cut/assemble 的第一步）。
-2) 保持默认行为不变：不指定 tags 时，默认集合与当前一致（management/auth/varstore/topicbus/exec/flow/file + forward）。
-3) 不改变 wire/业务语义：仅调整装配期的“默认集合构造方式”，不改各子协议实现。
+1) 在 `subproto/auth` 中补齐 `assist_register_resp`、`assist_login_resp` 的 action 处理，使其与普通 `register_resp`、`login_resp` 复用同一处理路径。
+2) 统一规则（你已确认）：
+   - `assist_*_resp` 在中间节点必须被消费（不继续转发），并映射为下游的普通 `*_resp`（避免 assist 语义泄漏给客户端）。
+3) 仅针对 Auth 协议修复；不扩到其它子协议；wire 不改。
 
 ### 范围
 #### 必须（本 PR）
-- `modules/defaultset`：
-  - 默认构造函数保持不变（仍为 `DefaultHub(cfg, log)`，签名不变）。
-  - 为以下子协议提供“禁用 tag”：
-    - `noauth`：默认集合不包含 `subproto/auth`
-    - `novarstore`：默认集合不包含 `subproto/varstore`
-    - `notopicbus`：默认集合不包含 `subproto/topicbus`
-    - `noexec`：默认集合不包含 `subproto/exec`
-    - `noflow`：默认集合不包含 `subproto/flow`
-    - `nofile`：默认集合不包含 `subproto/file`
-  - `management` 与 default forward **保持始终启用**（保证至少一个 handler + default 存在，避免空集合）。
+- `MyFlowHub-Server`：
+  - `subproto/auth`：注册并处理 `assist_register_resp`、`assist_login_resp`（复用现有 resp 逻辑；对下游仍发送 `register_resp` / `login_resp`）。
+  - `tests`：新增单测覆盖 `assist_*_resp` 回落行为。
 - 回归：
-  - `go test ./... -count=1 -p 1`（Windows，默认构建）
-  - `go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"`（Windows，验证“最大裁切”编译通过）
-
-#### 可选（本 PR，如不增加风险）
-- 在 `docs/change` 中补充一段“如何裁切构建”的示例命令（便于接手者复用）。
+  - `go test ./... -count=1 -p 1`（Windows）
 
 #### 不做（本 PR）
-- 引入 Module registry/Deps（更复杂的模块依赖与运行期选择）。
-- 修改 `cmd/hub_server` CLI/配置键以做运行期模块选择。
-- Linux 构建验收。
+- 抽象出跨协议通用的 “*_resp/assist_*_resp” 注册器（后续再做）。
+- 修改 `assist_*` 的 wire（action 名称、JSON struct）。
+- 调整 auth 的头部 Major/Target 规则（保持现有行为，降低风险）。
 
 ### 使用场景
-- 默认构建：行为与当前一致（全量默认集合）。
-- 裁切构建：例如希望部署一个不包含 `file/flow/exec` 的轻量 hub_server，可通过 `-tags "nofile noflow noexec"` 编译。
+- 节点 A 非权威：收到设备 `register/login` → 向父/权威发送 `assist_*` → 收到权威回的 `assist_*_resp` → A 正确消费并向设备回 `*_resp`。
 
 ### 功能需求
-- 默认集合构造顺序与当前一致（当模块启用时保持原有顺序），避免因顺序变化引入潜在差异。
-- `modules.DefaultHub` 对外行为不变；仍负责 `validateSet` 与返回 `modules.Set`。
+- 收到 `assist_register_resp` 时：
+  - 能 pop pending 的 device_id，更新绑定/路由必要元数据，并向 pending conn 发送 `register_resp`。
+- 收到 `assist_login_resp` 时：
+  - 同上，向 pending conn 发送 `login_resp`。
+- 行为与收到普通 `*_resp` 一致（复用逻辑）。
 
 ### 非功能需求
-- 性能：仅装配期构造；不引入运行期热路径开销。
-- 可维护性：tag 命名清晰；每个模块“启用/禁用”实现成对存在，避免缺符号导致构建失败。
+- 性能：仅多两个 action 注册；不增加热路径额外 marshal/unmarshal。
+- 可维护性：尽量复用现有代码，不引入重复分支。
 
 ### 输入输出
-- 输入：`DefaultHub(cfg, log)` + build tags（编译参数）。
-- 输出：默认启用 handler 集合 + default fallback（forward）。
+- 输入：上游连接发来的 `{"action":"assist_*_resp","data":...}`。
+- 输出：下游 pending 连接收到 `{"action":"*_resp","data":...}`。
 
 ### 边界异常
-- 裁切到仅 management：仍应满足 `validateSet`（handlers 非空、default 非 nil、subproto 不重复）。
+- data.device_id 为空：忽略（与现有 resp 行为一致）。
+- pending 不存在/连接不存在：忽略。
+- code != 1：仍应回落发送（与现有 resp 行为一致）。
 
 ### 验收标准
-- 无 tags 时：默认集合不变（以回归测试通过 + 代码对比确认）。
-- 开启 tags（示例组合）时：`go test` 通过，且默认集合中不包含被禁用模块的构造（代码层面由 build tag 保证）。
-- `modules` 包本身不因本 PR 引入新 import cycle。
+- 新增测试覆盖 `assist_register_resp`/`assist_login_resp` 回落逻辑。
+- `go test ./... -count=1 -p 1` 通过（Windows）。
 
 ### 风险
-- build tag 文件组织不当导致缺符号或重复定义（通过成对文件 + tag 约束避免）。
-- tag 命名未来需要调整（通过 docs/change 记录并保持一致性，后续可兼容别名）。
+- 若未来某端确实需要把 `assist_*_resp` 透传给客户端，本 PR 的“回落为 *_resp”将与其冲突；目前文档与现有 handler 设计倾向于中间节点消费，因此风险可控。
 
 ## 2) 架构设计（分析）
 ### 总体方案（含选型理由 / 备选对比）
-- 方案 A（采用）：在 `modules/defaultset` 内为每个可选子协议提供 `newXxxHandler()` 工厂函数，并用 build tags 提供“启用/禁用”的成对实现。
-  - 优点：默认行为不变；裁切粒度可控；无需改动 `modules` 的对外 API；无运行期开销。
-  - 缺点：文件数量增加（每个模块 2 个文件），但结构清晰、可审计。
-- 方案 B（不选）：仅提供 `minimal` 单一 tag（`!minimal` / `minimal` 两份 DefaultHub 实现）。
-  - 缺点：裁切粒度粗，难以满足“自由裁切/组装”；后续仍需重构。
+- 方案 A（采用）：在 `subproto/auth` action 注册中，为 `assist_register_resp`/`assist_login_resp` 增加 action entry，并复用现有 resp handler（最终对下游发送普通 `*_resp`）。
+  - 优点：wire 不变；行为符合文档；与 `varstore` 对 `assist_*_resp` 的处理方式一致；变更最小、风险低。
+- 方案 B（不选）：让权威节点改为回复普通 `register_resp/login_resp`。
+  - 缺点：改变既有 wire 语义/文档；对已存在的客户端/节点兼容性不明；需要跨端协调。
 
 ### 模块职责
-- `modules/defaultset`：承载默认集合构造策略，并在本 PR 引入 build tags 支持编译期裁切。
-- `modules`：保持抽象与校验不变（Set/validateSet/RegisterAll/BindServerHooks）。
+- `subproto/auth`：维护 Auth 协议的 action 注册表与处理逻辑；本 PR 仅补齐响应动作接收。
+- `tests/auth_handler_test.go`：覆盖关键链路回归。
 
-### 数据 / 调用流
-1) `cmd/hub_server` 调用 `modules.DefaultHub(cfg, log)`
-2) `modules.DefaultHub` 委托 `defaultset.DefaultHub(cfg, log)`
-3) `defaultset.DefaultHub`：
-   - 始终加入 management
-   - 条件性加入（由 build tags 决定）auth/varstore/topicbus/exec/flow/file
-   - 始终设置 default forward
-4) `modules` 校验并返回 Set
+### 数据 / 调用流（简化）
+1) device → A：`register` / `login`
+2) A → authority：`assist_register` / `assist_login`（A 记录 pending）
+3) authority → A：`assist_*_resp`
+4) A：消费 `assist_*_resp` → 对 device 发送 `*_resp`
+
+### 接口草案
+- 不新增对外 API；仅新增 action 注册项。
 
 ### 错误与安全
-- 不改变权限/路由/协议语义；仅变更装配集合构造。
+- 不新增权限绕过：仅让既有响应可被正确处理；仍沿用原有签名/白名单逻辑。
 
 ### 性能与测试策略
-- 性能：无运行期开销；仅装配期构造。
+- 性能：常量级注册；无额外 I/O。
 - 测试：
-  - 默认构建全量回归
-  - 最大裁切 tags 组合回归（确保 build tags 组织正确）
+  - 单测模拟 A 有 parent 连接，触发 pending + 收到 `assist_*_resp`，断言 device 收到 `*_resp`。
 
 ### 可扩展性设计点
-- 后续可在此基础上增加：
-  - 运行期模块选择（config/flags）
-  - Module registry/Deps
-  - 更细粒度的 build tag 命名规范（如按可执行文件前缀）
+- 后续可抽象统一工具：例如 `subproto/kit` 提供 “resp alias 注册” 帮助函数，减少各协议重复实现（另起 workflow）。
 
 ## 3.1) 计划拆分（Checklist）
 
 ## 问题清单（阻塞：否）
-- 无（本 PR 不改 wire/业务语义；tag 命名与验收标准已在本文定义）。
+- 无（规则与范围已确认：仅 auth；assist_*_resp 回落为 *_resp）。
 
-### BT0 - 归档旧 plan.md 并准备本 workflow 文档
-- 目标：保留历史 plan 的可审计性，不影响当前 workflow。
+### AR0 - 归档旧 plan.md 并准备本 workflow 文档
+- 目标：保留历史 plan 可审计性，避免混淆。
 - 涉及文件：
-  - `plan_archive_2026-02-16_modules-defaultset.md`
+  - `plan_archive_2026-02-16_defaultset-buildtags.md`
   - `plan.md`
-- 验收条件：新 `plan.md` 仅描述本次 build tags 引入。
+- 验收条件：新 `plan.md` 仅描述本次 Auth assist 响应收敛。
 - 回滚点：revert 文档提交。
 
-### BT1 - defaultset 拆分为 build-tag 工厂函数
-- 目标：将 `modules/defaultset/DefaultHub` 改为调用 `newXxxHandler()`，并为每个模块提供启用/禁用成对文件。
-- 涉及模块/文件（预期）：
-  - `modules/defaultset/hub.go`（重构为条件性 append）
-  - `modules/defaultset/*_enabled.go` + `*_disabled.go`（按 tag 分组）
+### AR1 - 补齐 auth 的 assist_*_resp action 注册
+- 目标：`subproto/auth` 能接收 `assist_register_resp` 与 `assist_login_resp` 并走与 `*_resp` 一致的处理。
+- 涉及文件：
+  - `subproto/auth/actions_register.go`
+  - `subproto/auth/actions_login.go`
 - 验收条件：
-  - 无 tags 时默认集合不变；
-  - tags 组合构建通过；
-  - 不引入 import cycle。
-- 测试点：见 BT2。
-- 回滚点：revert。
+  - `assist_*_resp` 不再被当作 unknown action。
+  - 对下游发送的 action 仍为 `register_resp/login_resp`。
+- 测试点：见 AR2。
+- 回滚点：revert 代码提交。
 
-### BT2 - 回归测试（含 tags 组合）
-- 目标：确保默认构建与裁切构建均通过。
+### AR2 - 新增单测覆盖 assist_*_resp 回落
+- 目标：用测试锁住行为。
+- 涉及文件：
+  - `tests/auth_handler_test.go`
+- 验收条件：
+  - 模拟链路：device->A register/login → A forward assist → A 收到 assist_*_resp → device 收到 *_resp。
+- 回滚点：revert 测试提交。
+
+### AR3 - 回归测试（Windows）
+- 目标：确保改动不会破坏现有功能。
 - 验收条件：
   - `go test ./... -count=1 -p 1` 通过（Windows）
-  - `go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"` 通过（Windows）
 
-### BT3 - Code Review + 归档变更
-- 目标：按模板完成审查与归档。
+### AR4 - Code Review + 归档变更
+- 目标：完成强制 Review 与归档。
 - 涉及文件：
-  - `docs/change/YYYY-MM-DD_defaultset-buildtags.md`
+  - `docs/change/YYYY-MM-DD_auth-assist-resp.md`
 - 验收条件：归档包含任务映射、关键决策、测试命令与回滚方案。
 
 ## 注意事项
-- 禁止计划外改动：若需要引入 Module registry/Deps 或运行期选择，必须另起 workflow。
+- 禁止计划外扩散：本 PR 不触及其它协议的 `assist/up/notify` 收敛；若需要统一抽象，另起 workflow。
 
 ## 执行记录
-- 2026-02-16：创建本 workflow worktree 与计划文档（进入 3.2）。
-- 2026-02-16：完成 BT1（defaultset build tags 工厂函数拆分）；提交：`b377c1c`。
-- 2026-02-16：完成 BT2（Windows 回归通过）：
-  - 默认构建：`go test ./... -count=1 -p 1`
-  - 最大裁切：`go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"`
+- 2026-02-16：创建本 workflow 分支与计划文档（待确认后进入 3.2）。
+
