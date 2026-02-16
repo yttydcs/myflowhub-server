@@ -57,3 +57,11 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 ## 回滚方案
 - 直接 `git revert` 本次合并的提交即可回滚（目录迁移与引用改动均在同一变更集内）。
 
+## Code Review（结论）
+- 需求覆盖：通过（仅路径迁移与依赖收敛；wire/行为不变；装配层已切换）。
+- 架构合理性：通过（`subproto/flow` 作为可装配子协议落点；依赖方向更清晰：subproto → proto）。
+- 性能风险：通过（无新增热路径逻辑；仅包路径/import 调整；无额外 I/O/锁/循环）。
+- 可读性与一致性：通过（保留原实现与命名；差异集中在目录与 import）。
+- 可扩展性与配置化：通过（迁移到 `subproto/*` 后更易拆库/裁切；`modules` 装配保持集中）。
+- 稳定性与安全：通过（不改权限/调度/落盘语义；启动期 `BindServer` 机制保持不变）。
+- 测试覆盖：通过（`go test ./... -count=1 -p 1` 在 Windows 通过，包含 `subproto/flow/graph_test.go`）。
