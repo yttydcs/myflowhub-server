@@ -1,153 +1,156 @@
-# Plan - modules/defaultset（默认装配集合解耦）（PR5-DefaultSet）
+# Plan - modules/defaultset 引入 build tags（裁切默认子协议集合）（PR6-BuildTags）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`refactor/server-modules-defaultset`
-- Worktree：`d:\project\MyFlowHub3\worktrees\pr5-server-defaultset\MyFlowHub-Server`
+- 分支：`refactor/server-defaultset-buildtags`
+- Worktree：`d:\project\MyFlowHub3\worktrees\pr6-server-buildtags\MyFlowHub-Server`
 - 参考总目标：`d:\project\MyFlowHub3\target.md`
 - 约束：commit 信息使用中文（前缀如 `refactor:` 可英文）
 
 ## 当前状态
-- `internal/handler/*` 已全部迁移到 `subproto/*`（management/varstore/topicbus/exec/flow/file/auth）。
-- `modules/` 已成为 hub_server 的装配入口，但当前 `modules/hub.go` 仍直接 import 具体子协议包并在 `DefaultHub()` 内硬编码默认启用集合。
-- 目标架构（见 `target.md`）建议引入 `modules/defaultset` 承载“默认启用模块集合”，为后续 build tags/裁切与更复杂的装配策略预留落点。
+- 目前 hub_server 默认启用集合由 `modules.DefaultHub(cfg, log)` 提供。
+- 默认集合的“具体模块列表”已解耦到 `modules/defaultset`（避免 `modules` 直接 import 所有 `subproto/*`）。
+- `subproto/*` 已对齐为公开可装配子协议模块（不再使用 `internal/handler/*`）。
+- 下一步（见 `target.md`）需要支持“子协议可裁切/可组装”，本 PR 先在 **默认集合** 层面引入 build tags，做到“编译期裁切默认集合”，同时保持默认行为不变。
 
 > 环境备注（不进 git）：本仓库 `go.mod` 使用 `replace ../MyFlowHub-Core`、`../MyFlowHub-Proto`。  
-> 在本 worktree 布局下，需要在 `d:\project\MyFlowHub3\worktrees\pr5-server-defaultset\` 下存在同名目录。  
+> 在本 worktree 布局下，需要在 `d:\project\MyFlowHub3\worktrees\pr6-server-buildtags\` 下存在同名目录。  
 > 当前通过 Junction 指向 `d:\project\MyFlowHub3\repo\MyFlowHub-Core` / `d:\project\MyFlowHub3\repo\MyFlowHub-Proto` 满足。
 
 ## 1) 需求分析
 ### 目标
-1) 将 hub_server 的“默认装配集合”从 `modules` 包内的硬编码构造逻辑中解耦出来，落到 `modules/defaultset`。
-2) 保持行为不变：默认启用的子协议集合、构造方式（`New*WithConfig`）、启动期 `BindServerHooks` 机制不变。
-3) 为后续“可裁切/可组装（build tags / 多 main 变体）”提供稳定落点与更清晰的依赖方向。
+1) 为 `modules/defaultset` 引入 build tags，使 hub_server 的默认启用集合支持**编译期裁切**（source-level cut/assemble 的第一步）。
+2) 保持默认行为不变：不指定 tags 时，默认集合与当前一致（management/auth/varstore/topicbus/exec/flow/file + forward）。
+3) 不改变 wire/业务语义：仅调整装配期的“默认集合构造方式”，不改各子协议实现。
 
 ### 范围
 #### 必须（本 PR）
-- 新增 `modules/defaultset` 包，提供“hub_server 默认启用模块集合”的构造函数（handlers + default）。
-- `modules.DefaultHub(cfg, log)` 改为委托 `modules/defaultset`，避免在 `modules` 包内直接 import 各 `subproto/*`。
-- 回归：`go test ./... -count=1 -p 1` 通过（Windows）。
+- `modules/defaultset`：
+  - 默认构造函数保持不变（仍为 `DefaultHub(cfg, log)`，签名不变）。
+  - 为以下子协议提供“禁用 tag”：
+    - `noauth`：默认集合不包含 `subproto/auth`
+    - `novarstore`：默认集合不包含 `subproto/varstore`
+    - `notopicbus`：默认集合不包含 `subproto/topicbus`
+    - `noexec`：默认集合不包含 `subproto/exec`
+    - `noflow`：默认集合不包含 `subproto/flow`
+    - `nofile`：默认集合不包含 `subproto/file`
+  - `management` 与 default forward **保持始终启用**（保证至少一个 handler + default 存在，避免空集合）。
+- 回归：
+  - `go test ./... -count=1 -p 1`（Windows，默认构建）
+  - `go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"`（Windows，验证“最大裁切”编译通过）
 
 #### 可选（本 PR，如不增加风险）
-- 在 `modules/defaultset` 中预留最小扩展点（例如明确的构造函数/类型命名），但不引入 build tags 与复杂裁切逻辑（避免一次 PR 过大）。
+- 在 `docs/change` 中补充一段“如何裁切构建”的示例命令（便于接手者复用）。
 
 #### 不做（本 PR）
-- 修改任何子协议 handler 的业务语义、wire 协议、权限点与错误码。
-- 引入新的模块依赖解析（Deps）、模块注册表（Module interface）或 build tags 裁切（这些可作为下一轮目标）。
+- 引入 Module registry/Deps（更复杂的模块依赖与运行期选择）。
+- 修改 `cmd/hub_server` CLI/配置键以做运行期模块选择。
 - Linux 构建验收。
 
 ### 使用场景
-- `cmd/hub_server` 启动时调用 `modules.DefaultHub(cfg, log)` 获取默认集合，并注册到 dispatcher。
+- 默认构建：行为与当前一致（全量默认集合）。
+- 裁切构建：例如希望部署一个不包含 `file/flow/exec` 的轻量 hub_server，可通过 `-tags "nofile noflow noexec"` 编译。
 
 ### 功能需求
-- 默认集合仍包含（与当前一致）：`management/auth/varstore/topicbus/exec/flow/file` + default forward。
-- `modules.RegisterAll`、`modules.BindServerHooks` 行为不变。
+- 默认集合构造顺序与当前一致（当模块启用时保持原有顺序），避免因顺序变化引入潜在差异。
+- `modules.DefaultHub` 对外行为不变；仍负责 `validateSet` 与返回 `modules.Set`。
 
 ### 非功能需求
-- 性能：仅装配构造逻辑的包边界调整，不引入运行期热路径额外开销。
-- 可维护性：变更最小化、可回滚、文档与代码一致。
+- 性能：仅装配期构造；不引入运行期热路径开销。
+- 可维护性：tag 命名清晰；每个模块“启用/禁用”实现成对存在，避免缺符号导致构建失败。
 
 ### 输入输出
-- 输入：`DefaultHub(cfg, log)`（cfg 可为 nil；log 可为 nil）。
-- 输出：`modules.Set{Handlers, Default}` 与错误（保持现有约定）。
+- 输入：`DefaultHub(cfg, log)` + build tags（编译参数）。
+- 输出：默认启用 handler 集合 + default fallback（forward）。
 
 ### 边界异常
-- `cfg == nil`：各 handler 仍应按既有实现处理（保持）。
-- `log == nil`：保持现有默认 logger 处理方式（保持）。
+- 裁切到仅 management：仍应满足 `validateSet`（handlers 非空、default 非 nil、subproto 不重复）。
 
 ### 验收标准
-- `modules/hub.go` 不再直接 import `subproto/*`（只允许通过 `modules/defaultset` 间接依赖）。
-- 默认启用集合不变（通过对比构造点 + `go test` 回归确保）。
-- `go test ./... -count=1 -p 1` 通过（Windows）。
+- 无 tags 时：默认集合不变（以回归测试通过 + 代码对比确认）。
+- 开启 tags（示例组合）时：`go test` 通过，且默认集合中不包含被禁用模块的构造（代码层面由 build tag 保证）。
+- `modules` 包本身不因本 PR 引入新 import cycle。
 
 ### 风险
-- 漏迁移/漏包含某个 handler，导致 hub_server 默认能力缺失（通过构造点对比与回归测试降低风险）。
-- 产生新的 import cycle（通过“defaultset 不反向依赖 modules”或清晰的依赖方向设计避免）。
+- build tag 文件组织不当导致缺符号或重复定义（通过成对文件 + tag 约束避免）。
+- tag 命名未来需要调整（通过 docs/change 记录并保持一致性，后续可兼容别名）。
 
 ## 2) 架构设计（分析）
 ### 总体方案（含选型理由 / 备选对比）
-- 方案 A（采用）：新增 `modules/defaultset` 包承载默认集合构造；`modules.DefaultHub` 委托该包构造并继续负责校验。
-  - 优点：实现小、风险低；让 `modules` 包更“稳定/抽象”，默认集合成为可替换的策略包；为后续 build tags/裁切预留明确落点。
-  - 缺点：仍未引入 module registry/Deps；仅完成“默认集合构造”的分层调整。
-- 方案 B（不选）：继续在 `modules` 包内硬编码默认集合，仅通过文件拆分/注释约束。
-  - 缺点：`modules` 长期直接依赖所有子协议实现包，不利于裁切与后续拆库。
+- 方案 A（采用）：在 `modules/defaultset` 内为每个可选子协议提供 `newXxxHandler()` 工厂函数，并用 build tags 提供“启用/禁用”的成对实现。
+  - 优点：默认行为不变；裁切粒度可控；无需改动 `modules` 的对外 API；无运行期开销。
+  - 缺点：文件数量增加（每个模块 2 个文件），但结构清晰、可审计。
+- 方案 B（不选）：仅提供 `minimal` 单一 tag（`!minimal` / `minimal` 两份 DefaultHub 实现）。
+  - 缺点：裁切粒度粗，难以满足“自由裁切/组装”；后续仍需重构。
 
 ### 模块职责
-- `modules`：定义装配所需抽象（Set/Dispatcher/RegisterAll/BindServerHooks/validateSet），并提供 `DefaultHub` 作为“对外稳定入口”（本 PR 改为委托 defaultset）。
-- `modules/defaultset`：提供“默认启用集合”的具体策略实现（集中 import 各子协议实现包）。
+- `modules/defaultset`：承载默认集合构造策略，并在本 PR 引入 build tags 支持编译期裁切。
+- `modules`：保持抽象与校验不变（Set/validateSet/RegisterAll/BindServerHooks）。
 
 ### 数据 / 调用流
 1) `cmd/hub_server` 调用 `modules.DefaultHub(cfg, log)`
-2) `modules.DefaultHub` 委托 `defaultset.Hub(cfg, log)`（或同等命名）获取 handlers/default
-3) `modules.DefaultHub` 继续执行 `validateSet` 并返回 `modules.Set`
-4) `modules.RegisterAll` 注册 handlers + default
-5) `modules.BindServerHooks` 启动期绑定（保持）
-
-### 接口草案
-- `modules/defaultset`（新增）：
-  - `func Hub(cfg core.IConfig, log *slog.Logger) (handlers []core.ISubProcess, def core.ISubProcess)`
-  - 或：`func DefaultHub(cfg core.IConfig, log *slog.Logger) (handlers []core.ISubProcess, def core.ISubProcess)`
-  - 以实现清晰、避免 import cycle 为第一优先。
+2) `modules.DefaultHub` 委托 `defaultset.DefaultHub(cfg, log)`
+3) `defaultset.DefaultHub`：
+   - 始终加入 management
+   - 条件性加入（由 build tags 决定）auth/varstore/topicbus/exec/flow/file
+   - 始终设置 default forward
+4) `modules` 校验并返回 Set
 
 ### 错误与安全
-- 不引入新的权限/路由语义；仅装配边界调整。
+- 不改变权限/路由/协议语义；仅变更装配集合构造。
 
 ### 性能与测试策略
-- 性能：装配期一次性构造；不引入运行期额外开销。
+- 性能：无运行期开销；仅装配期构造。
 - 测试：
-  - 全量回归：`$env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'; go test ./... -count=1 -p 1`
+  - 默认构建全量回归
+  - 最大裁切 tags 组合回归（确保 build tags 组织正确）
 
 ### 可扩展性设计点
-- 后续可在 `modules/defaultset` 基础上引入 build tags / 多 main 变体，实现编译期裁切。
-- 后续可引入 module registry（Module interface/Deps）而不破坏 `modules` 现有 API（通过新增 API 并逐步迁移）。
+- 后续可在此基础上增加：
+  - 运行期模块选择（config/flags）
+  - Module registry/Deps
+  - 更细粒度的 build tag 命名规范（如按可执行文件前缀）
 
 ## 3.1) 计划拆分（Checklist）
 
 ## 问题清单（阻塞：否）
-- 无（目标明确、wire/行为不变，且本 PR 仅做装配层解耦）。
+- 无（本 PR 不改 wire/业务语义；tag 命名与验收标准已在本文定义）。
 
-### DS0 - 归档旧 plan.md 并准备本 workflow 文档
+### BT0 - 归档旧 plan.md 并准备本 workflow 文档
 - 目标：保留历史 plan 的可审计性，不影响当前 workflow。
 - 涉及文件：
-  - `plan_archive_2026-02-16_auth-subproto.md`
+  - `plan_archive_2026-02-16_modules-defaultset.md`
   - `plan.md`
-- 验收条件：新 `plan.md` 仅描述本次 defaultset 解耦。
+- 验收条件：新 `plan.md` 仅描述本次 build tags 引入。
 - 回滚点：revert 文档提交。
 
-### DS1 - 新增 modules/defaultset
-- 目标：提供 hub_server 默认启用集合的构造函数（handlers + default）。
+### BT1 - defaultset 拆分为 build-tag 工厂函数
+- 目标：将 `modules/defaultset/DefaultHub` 改为调用 `newXxxHandler()`，并为每个模块提供启用/禁用成对文件。
 - 涉及模块/文件（预期）：
-  - `modules/defaultset/defaultset.go`（或等价命名）
+  - `modules/defaultset/hub.go`（重构为条件性 append）
+  - `modules/defaultset/*_enabled.go` + `*_disabled.go`（按 tag 分组）
 - 验收条件：
-  - 默认集合包含与当前一致的 handlers + default forward。
-  - `defaultset` 只依赖 `core` + `subproto/*`（不反向依赖 `modules`，避免 cycle）。
-- 测试点：`go test ./...`。
+  - 无 tags 时默认集合不变；
+  - tags 组合构建通过；
+  - 不引入 import cycle。
+- 测试点：见 BT2。
 - 回滚点：revert。
 
-### DS2 - modules.DefaultHub 委托 defaultset
-- 目标：`modules.DefaultHub` 不再直接 import 具体子协议包。
-- 涉及文件（预期）：
-  - `modules/hub.go`
+### BT2 - 回归测试（含 tags 组合）
+- 目标：确保默认构建与裁切构建均通过。
 - 验收条件：
-  - 对外函数签名不变；
-  - `modules/hub.go` 中不再直接出现 `subproto/*` import。
-- 回滚点：revert。
+  - `go test ./... -count=1 -p 1` 通过（Windows）
+  - `go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"` 通过（Windows）
 
-### DS3 - 全量回归
-- 目标：确保装配层调整不破坏编译/测试。
-- 验收条件：
-  - `go test ./... -count=1 -p 1` 通过（Windows）。
-
-### DS4 - Code Review + 归档变更
+### BT3 - Code Review + 归档变更
 - 目标：按模板完成审查与归档。
 - 涉及文件：
-  - `docs/change/YYYY-MM-DD_modules-defaultset.md`
-- 验收条件：归档包含任务映射、关键决策、测试结果与回滚方案。
+  - `docs/change/YYYY-MM-DD_defaultset-buildtags.md`
+- 验收条件：归档包含任务映射、关键决策、测试命令与回滚方案。
 
 ## 注意事项
-- 禁止计划外改动：若需要引入 module registry/build tags 等更大调整，必须回到 3.1 更新计划并重新确认。
+- 禁止计划外改动：若需要引入 Module registry/Deps 或运行期选择，必须另起 workflow。
 
 ## 执行记录
-- 2026-02-16：创建本 workflow worktree 与计划文档。
-- 2026-02-16：完成 DS1-DS3；回归 `go test ./... -count=1 -p 1` 通过（Windows）。
-- 2026-02-16：完成 DS4（Code Review 通过；归档文档补齐）。
+- 2026-02-16：创建本 workflow worktree 与计划文档（待确认后进入 3.2）。
+
