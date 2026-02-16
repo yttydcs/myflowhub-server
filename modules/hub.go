@@ -6,14 +6,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	authhandler "github.com/yttydcs/myflowhub-server/subproto/auth"
-	exechandler "github.com/yttydcs/myflowhub-server/subproto/exec"
-	filehandler "github.com/yttydcs/myflowhub-server/subproto/file"
-	flowhandler "github.com/yttydcs/myflowhub-server/subproto/flow"
-	"github.com/yttydcs/myflowhub-server/subproto/forward"
-	"github.com/yttydcs/myflowhub-server/subproto/management"
-	"github.com/yttydcs/myflowhub-server/subproto/topicbus"
-	varstore "github.com/yttydcs/myflowhub-server/subproto/varstore"
+	"github.com/yttydcs/myflowhub-server/modules/defaultset"
 )
 
 // Dispatcher 抽象 hub_server 装配所需的最小 dispatcher 能力。
@@ -31,17 +24,10 @@ type Set struct {
 
 // DefaultHub 返回 hub_server 的默认启用模块集合。
 func DefaultHub(cfg core.IConfig, log *slog.Logger) (Set, error) {
+	handlers, def := defaultset.DefaultHub(cfg, log)
 	set := Set{
-		Handlers: []core.ISubProcess{
-			management.NewHandler(log),
-			authhandler.NewLoginHandlerWithConfig(cfg, log),
-			varstore.NewVarStoreHandlerWithConfig(cfg, log),
-			topicbus.NewTopicBusHandlerWithConfig(cfg, log),
-			exechandler.NewHandlerWithConfig(cfg, log),
-			flowhandler.NewHandlerWithConfig(cfg, log),
-			filehandler.NewHandlerWithConfig(cfg, log),
-		},
-		Default: forward.NewDefaultForwardHandler(cfg, log),
+		Handlers: handlers,
+		Default:  def,
 	}
 	if err := validateSet(set); err != nil {
 		return Set{}, err
