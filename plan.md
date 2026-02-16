@@ -1,146 +1,152 @@
-# Plan - Auth assist 响应收敛（assist_*_resp 支持）（PR7-Auth-AssistResp）
+# Plan - Pending 回包继承 MsgID/TraceID（Auth/VarStore）（PR8-PendingIDs）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`fix/server-auth-assist-resp`
-- Worktree：`d:\project\MyFlowHub3\worktrees\pr7-auth-assist-resp\MyFlowHub-Server`
-- 参考总目标：`d:\project\MyFlowHub3\target.md`
-- 约束：commit 信息使用中文（前缀如 `fix:` 可英文）
+- 分支：`fix/pending-msgid-traceid`
+- Worktree：`d:\project\MyFlowHub3\worktrees\pr8-pending-ids\MyFlowHub-Server`
+- Base：`main`
+- 参考：
+  - `d:\project\MyFlowHub3\target.md`
+  - `d:\project\MyFlowHub3\repos.md`
+  - `d:\project\MyFlowHub3\guide.md`（commit 信息中文）
+- 约束：
+  - 仅改 `MyFlowHub-Server`；仅 `auth/varstore`；仅 pending 回落链路；wire 不改。
+  - 所有实现性改动只在本 worktree 内完成；`repo/` 仅用于合并/推送/集成验证。
 
 ## 当前状态（事实）
-- 文档 `docs/2-auth.md` 定义了 `assist_register_resp`、`assist_login_resp` 等响应动作。
-- 代码 `subproto/auth` 当前会发送 `assist_register_resp` / `assist_login_resp`（权威节点处理 `assist_*` 时）。
-- 但 `subproto/auth` 的 action 注册仅包含 `register_resp` / `login_resp`，缺少对上述 `assist_*_resp` 的接收处理：在“非权威节点向上 assist，请求返回时”的链路下，响应会被当作 unknown action 丢弃，导致下游设备/子节点得不到 `*_resp`。
+- 后续 `MyFlowHub-SDK v1` 计划按 HeaderTcp v2 的 `MsgID` 做请求-响应等待；但 Server 在“中间节点 pending 回落响应给下游”的路径里，构造响应头时未继承原请求的 `MsgID/TraceID`，导致客户端无法用 `MsgID` 匹配响应。
+- 现状证据（不做引用外链，便于本地审计）：
+  - Auth pending 仅记录 `device_id -> connID`：`subproto/auth/auth.go`、`subproto/auth/transport.go`。
+  - Auth 多处回落响应使用 `sendResp(..., nil, ...)`：`subproto/auth/actions_register.go`、`subproto/auth/actions_login.go`、`subproto/auth/actions_query.go`。
+  - VarStore pending 仅记录 connIDs，回落响应通过 `broadcastPendingResp -> sendResp(..., nil, ...)`：`subproto/varstore/varstore.go`。
+
+---
 
 ## 1) 需求分析
-### 目标
-1) 在 `subproto/auth` 中补齐 `assist_register_resp`、`assist_login_resp` 的 action 处理，使其与普通 `register_resp`、`login_resp` 复用同一处理路径。
-2) 统一规则（你已确认）：
-   - `assist_*_resp` 在中间节点必须被消费（不继续转发），并映射为下游的普通 `*_resp`（避免 assist 语义泄漏给客户端）。
-3) 仅针对 Auth 协议修复；不扩到其它子协议；wire 不改。
 
-### 范围
+### 目标
+- 仅在 `MyFlowHub-Server` 内，把 **Auth/VarStore 的 pending（中间节点代回包）场景** 的响应头补齐为：继承原始下游请求的 `MsgID` 与 `TraceID`。
+- 为下一步 SDK v1 的 “按 MsgID Awaiter” 扫清阻塞点。
+
+### 范围（必须 / 可选 / 不做）
 #### 必须（本 PR）
-- `MyFlowHub-Server`：
-  - `subproto/auth`：注册并处理 `assist_register_resp`、`assist_login_resp`（复用现有 resp 逻辑；对下游仍发送 `register_resp` / `login_resp`）。
-  - `tests`：新增单测覆盖 `assist_*_resp` 回落行为。
-- 回归：
-  - `go test ./... -count=1 -p 1`（Windows）
+- `subproto/auth`：
+  - pending 从 `device_id -> connID` 扩展为 `device_id -> {conn_id,msg_id,trace_id}`。
+  - 在以下 pending 链路回落响应时，响应头 `MsgID/TraceID` 必须等于原始请求：
+    - `assist_register_resp` → 下游 `register_resp`
+    - `assist_login_resp` → 下游 `login_resp`
+    - `assist_query_credential_resp`（补齐 credential）→ 下游 `login_resp`
+- `subproto/varstore`：
+  - pending 从 “仅 connIDs” 扩展为 “每个等待者均记录 `{conn_id,msg_id,trace_id}`”。
+  - 在上游 `assist_*_resp` 到来后，对每个等待者回包时写回其各自的 `MsgID/TraceID`。
+- 单测覆盖关键链路：断言 pending 回落响应头继承 `MsgID/TraceID`。
+- 回归：`go test ./... -count=1 -p 1`（Windows）。
+
+#### 可选（本 PR 如无额外风险）
+- 在归档文档中明确：本 PR 只补齐 pending 场景；其它直接响应（例如 auth 的 get_perms/list_roles）仍保持现状，避免范围外扩。
 
 #### 不做（本 PR）
-- 抽象出跨协议通用的 “*_resp/assist_*_resp” 注册器（后续再做）。
-- 修改 `assist_*` 的 wire（action 名称、JSON struct）。
-- 调整 auth 的头部 Major/Target 规则（保持现有行为，降低风险）。
+- 不改 wire：action 名称 / JSON 结构 / SubProto 编号不变。
+- 不扩到其它子协议（topicbus/file/flow/exec/management 等）。
+- 不统一其它头字段语义（Major/Source/Target/TS 等）；本 PR 只关心 `MsgID/TraceID`。
 
 ### 使用场景
-- 节点 A 非权威：收到设备 `register/login` → 向父/权威发送 `assist_*` → 收到权威回的 `assist_*_resp` → A 正确消费并向设备回 `*_resp`。
-
-### 功能需求
-- 收到 `assist_register_resp` 时：
-  - 能 pop pending 的 device_id，更新绑定/路由必要元数据，并向 pending conn 发送 `register_resp`。
-- 收到 `assist_login_resp` 时：
-  - 同上，向 pending conn 发送 `login_resp`。
-- 行为与收到普通 `*_resp` 一致（复用逻辑）。
-
-### 非功能需求
-- 性能：仅多两个 action 注册；不增加热路径额外 marshal/unmarshal。
-- 可维护性：尽量复用现有代码，不引入重复分支。
-
-### 输入输出
-- 输入：上游连接发来的 `{"action":"assist_*_resp","data":...}`。
-- 输出：下游 pending 连接收到 `{"action":"*_resp","data":...}`。
-
-### 边界异常
-- data.device_id 为空：忽略（与现有 resp 行为一致）。
-- pending 不存在/连接不存在：忽略。
-- code != 1：仍应回落发送（与现有 resp 行为一致）。
+- device/子节点 → 中间节点 → authority/父节点（assist 上送）→ 中间节点收到上游响应后 **代回包给原发起连接**：
+  - 客户端可用 `MsgID`（配合 `TraceID` 诊断）可靠匹配响应。
 
 ### 验收标准
-- 新增测试覆盖 `assist_register_resp`/`assist_login_resp` 回落逻辑。
-- `go test ./... -count=1 -p 1` 通过（Windows）。
+- `auth/varstore` 的 pending 回落响应头：
+  - `MsgID == 原请求 MsgID`
+  - `TraceID == 原请求 TraceID`
+- 单测覆盖并通过。
+- `go test ./...` 通过（Windows）。
 
 ### 风险
-- 若未来某端确实需要把 `assist_*_resp` 透传给客户端，本 PR 的“回落为 *_resp”将与其冲突；目前文档与现有 handler 设计倾向于中间节点消费，因此风险可控。
+- 若某些客户端历史上默认 `MsgID/TraceID=0`，SDK 仍无法等待；但该问题属于调用方未按协议生成 header，不由本 PR 扩展处理。
+
+---
 
 ## 2) 架构设计（分析）
-### 总体方案（含选型理由 / 备选对比）
-- 方案 A（采用）：在 `subproto/auth` action 注册中，为 `assist_register_resp`/`assist_login_resp` 增加 action entry，并复用现有 resp handler（最终对下游发送普通 `*_resp`）。
-  - 优点：wire 不变；行为符合文档；与 `varstore` 对 `assist_*_resp` 的处理方式一致；变更最小、风险低。
-- 方案 B（不选）：让权威节点改为回复普通 `register_resp/login_resp`。
-  - 缺点：改变既有 wire 语义/文档；对已存在的客户端/节点兼容性不明；需要跨端协调。
 
-### 模块职责
-- `subproto/auth`：维护 Auth 协议的 action 注册表与处理逻辑；本 PR 仅补齐响应动作接收。
-- `tests/auth_handler_test.go`：覆盖关键链路回归。
+### 总体方案（采用）
+- pending 结构额外记录 `msg_id/trace_id`：
+  - Auth：单等待者（device_id 唯一）→ 保存一份 `{conn_id,msg_id,trace_id}`
+  - VarStore：多等待者 → 保存 `[]waiter{conn_id,msg_id,trace_id}`
+- 回包时不改变 payload/action，仅在最终写出 header 前写回 `MsgID/TraceID`。
 
-### 数据 / 调用流（简化）
-1) device → A：`register` / `login`
-2) A → authority：`assist_register` / `assist_login`（A 记录 pending）
-3) authority → A：`assist_*_resp`
-4) A：消费 `assist_*_resp` → 对 device 发送 `*_resp`
+### 为什么不存整份 header
+- 本 PR 只为 SDK 等待语义清障；存整头会引入额外语义绑定与后续演进成本。
 
-### 接口草案
-- 不新增对外 API；仅新增 action 注册项。
-
-### 错误与安全
-- 不新增权限绕过：仅让既有响应可被正确处理；仍沿用原有签名/白名单逻辑。
-
-### 性能与测试策略
-- 性能：常量级注册；无额外 I/O。
-- 测试：
-  - 单测模拟 A 有 parent 连接，触发 pending + 收到 `assist_*_resp`，断言 device 收到 `*_resp`。
-
-### 可扩展性设计点
-- 后续可抽象统一工具：例如 `subproto/kit` 提供 “resp alias 注册” 帮助函数，减少各协议重复实现（另起 workflow）。
+---
 
 ## 3.1) 计划拆分（Checklist）
 
 ## 问题清单（阻塞：否）
-- 无（规则与范围已确认：仅 auth；assist_*_resp 回落为 *_resp）。
+- 无（范围/方案/验收已确认：仅 pending 场景补齐 MsgID/TraceID）。
 
-### AR0 - 归档旧 plan.md 并准备本 workflow 文档
-- 目标：保留历史 plan 可审计性，避免混淆。
+### PID0 - 归档旧 plan.md（PR7）
+- 目标：保留已完成 workflow 的 plan 文档，避免被覆盖后无法审计。
 - 涉及文件：
-  - `plan_archive_2026-02-16_defaultset-buildtags.md`
+  - `plan_archive_2026-02-16_auth-assist-resp.md`
   - `plan.md`
-- 验收条件：新 `plan.md` 仅描述本次 Auth assist 响应收敛。
-- 回滚点：revert 文档提交。
+- 验收条件：
+  - 旧内容完整保存在 archive 文件中；
+  - 新 `plan.md` 只描述本 workflow。
+- 回滚点：revert 本提交。
 
-### AR1 - 补齐 auth 的 assist_*_resp action 注册
-- 目标：`subproto/auth` 能接收 `assist_register_resp` 与 `assist_login_resp` 并走与 `*_resp` 一致的处理。
-- 涉及文件：
+### PID1 - Auth：pending 记录 msg_id/trace_id，并在回落响应写回
+- 目标：Auth pending 回落响应头继承原请求的 `MsgID/TraceID`。
+- 涉及模块 / 文件：
+  - `subproto/auth/auth.go`
+  - `subproto/auth/transport.go`
   - `subproto/auth/actions_register.go`
   - `subproto/auth/actions_login.go`
+  - `subproto/auth/actions_query.go`
 - 验收条件：
-  - `assist_*_resp` 不再被当作 unknown action。
-  - 对下游发送的 action 仍为 `register_resp/login_resp`。
-- 测试点：见 AR2。
-- 回滚点：revert 代码提交。
+  - `setPending(...)` 会记录原请求 header 的 `MsgID/TraceID`；
+  - `assist_*_resp` / `assist_query_credential_resp` 回落给下游时，响应头写回相同 `MsgID/TraceID`；
+  - 不影响非 pending 的直接响应路径。
+- 测试点：见 PID3。
+- 回滚点：revert 本提交。
 
-### AR2 - 新增单测覆盖 assist_*_resp 回落
-- 目标：用测试锁住行为。
+### PID2 - VarStore：pending/pendingSubs 记录 msg_id/trace_id，并在回落响应写回
+- 目标：VarStore pending 回落响应头继承原请求的 `MsgID/TraceID`（支持多等待者）。
+- 涉及模块 / 文件：
+  - `subproto/varstore/types.go`
+  - `subproto/varstore/varstore.go`
+- 验收条件：
+  - `addPending(...)` 为每个等待者记录 `{conn_id,msg_id,trace_id}`；
+  - `broadcastPendingResp(...)` 逐等待者回包时写回对应 `MsgID/TraceID`；
+  - subscribe pending（如涉及）同理。
+- 测试点：见 PID3。
+- 回滚点：revert 本提交。
+
+### PID3 - 单测：断言 pending 回落响应头继承 msg_id/trace_id
+- 目标：锁定行为，避免未来回归。
 - 涉及文件：
   - `tests/auth_handler_test.go`
+  - `tests/varstore_handler_test.go`
 - 验收条件：
-  - 模拟链路：device->A register/login → A forward assist → A 收到 assist_*_resp → device 收到 *_resp。
-- 回滚点：revert 测试提交。
+  - Auth：在 `assist_register_resp` / `assist_login_resp` 回落用例中，device 收到的响应头 `MsgID/TraceID` 与原请求一致。
+  - VarStore：在 “get miss → forward → assist_get_resp → get_resp 回落” 用例中，child 收到的响应头 `MsgID/TraceID` 与原请求一致。
+- 回滚点：revert 本提交。
 
-### AR3 - 回归测试（Windows）
+### PID4 - 回归测试（Windows）
 - 目标：确保改动不会破坏现有功能。
+- 命令（建议统一，避免临时目录权限/并发问题）：
+  - `$env:GOTMPDIR='d:\project\MyFlowHub3\.tmp\gotmp'`
+  - `New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null`
+  - `go test ./... -count=1 -p 1`
+- 验收条件：测试通过。
+- 回滚点：无（仅验证）。
+
+### PID5 - Code Review（阶段 3.3）+ 归档变更（阶段 4）
+- 目标：完成强制 Code Review 与 docs/change 归档。
+- 归档文件：
+  - `docs/change/YYYY-MM-DD_pending-msgid-traceid.md`
 - 验收条件：
-  - `go test ./... -count=1 -p 1` 通过（Windows）
+  - Review 覆盖：需求/架构/性能/安全/测试；
+  - 归档包含：任务映射、关键设计决策、测试命令与回滚方案（`git revert <sha>`）。
 
-### AR4 - Code Review + 归档变更
-- 目标：完成强制 Review 与归档。
-- 涉及文件：
-  - `docs/change/YYYY-MM-DD_auth-assist-resp.md`
-- 验收条件：归档包含任务映射、关键决策、测试命令与回滚方案。
-
-## 注意事项
-- 禁止计划外扩散：本 PR 不触及其它协议的 `assist/up/notify` 收敛；若需要统一抽象，另起 workflow。
-
-## 执行记录
-- 2026-02-16：创建本 workflow 分支与计划文档（待确认后进入 3.2）。
-- 2026-02-16：确认 plan.md，进入 3.2；环境准备（不进 git）：在 `worktrees/pr7-auth-assist-resp/` 下创建 `MyFlowHub-Core`、`MyFlowHub-Proto` Junction 指向 `repo/`，满足 `go.mod replace ../MyFlowHub-*`。
-- 2026-02-16：完成 AR1/AR2（补齐 `assist_*_resp` action + 单测）；提交：`5094e26`。
-- 2026-02-16：完成 AR3（Windows 回归通过）：`go test ./... -count=1 -p 1`。
+## 注意事项（避免范围外扩）
+- 本 PR 不处理 Auth 的 `get_perms/list_roles` 等直接响应的 `MsgID/TraceID` 继承问题；若 SDK v1 需要对这些动作也支持 Awaiter，需另起 workflow 明确范围后再做。
