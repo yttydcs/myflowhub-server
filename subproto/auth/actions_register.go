@@ -122,9 +122,13 @@ func registerRegisterActions(h *LoginHandler) []core.SubProcessAction {
 }
 
 func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage, assisted bool) {
+	send := h.sendDirectResp
+	if assisted {
+		send = h.sendResp
+	}
 	var req registerData
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
-		h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid register data"})
+		send(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid register data"})
 		return
 	}
 	if strings.TrimSpace(req.PubKey) == "" && strings.TrimSpace(h.nodePubB64) != "" {
@@ -134,7 +138,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	var pubRaw []byte
 	if strings.TrimSpace(req.PubKey) != "" {
 		if _, raw, err := parseECPubKey(req.PubKey); err != nil {
-			h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid pubkey"})
+			send(ctx, conn, hdr, actionRegisterResp, respData{Code: 400, Msg: "invalid pubkey"})
 			return
 		} else {
 			pubRaw = raw
@@ -148,7 +152,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 		if strings.TrimSpace(req.PubKey) != "" {
 			h.addTrustedNode(nodeID, req.PubKey)
 		}
-		h.sendResp(ctx, conn, hdr, actionAssistRegisterResp, respData{
+		send(ctx, conn, hdr, actionAssistRegisterResp, respData{
 			Code:     1,
 			Msg:      "ok",
 			DeviceID: req.DeviceID,
@@ -174,7 +178,7 @@ func (h *LoginHandler) handleRegister(ctx context.Context, conn core.IConnection
 	if strings.TrimSpace(req.PubKey) != "" {
 		h.addTrustedNode(nodeID, req.PubKey)
 	}
-	h.sendResp(ctx, conn, hdr, actionRegisterResp, respData{
+	send(ctx, conn, hdr, actionRegisterResp, respData{
 		Code:     1,
 		Msg:      "ok",
 		DeviceID: req.DeviceID,

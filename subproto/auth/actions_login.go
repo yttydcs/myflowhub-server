@@ -23,9 +23,13 @@ func (a *loginAction) Name() string {
 	return actionLogin
 }
 func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+	send := a.h.sendDirectResp
+	if a.assisted {
+		send = a.h.sendResp
+	}
 	var req loginData
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
-		a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 400, Msg: "invalid login data"})
+		send(ctx, conn, hdr, actionLoginResp, respData{Code: 400, Msg: "invalid login data"})
 		return
 	}
 	if a.assisted {
@@ -78,11 +82,11 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 		if valid {
 			a.h.saveBinding(ctx, conn, req.DeviceID, rec.NodeID, rec.PubKey)
 			a.h.applyHubID(ctx, conn, localNodeID(ctx))
-			a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, HubID: localNodeID(ctx), PubKey: base64.StdEncoding.EncodeToString(rec.PubKey), NodePub: base64.StdEncoding.EncodeToString(rec.PubKey)})
+			send(ctx, conn, hdr, actionLoginResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: rec.NodeID, HubID: localNodeID(ctx), PubKey: base64.StdEncoding.EncodeToString(rec.PubKey), NodePub: base64.StdEncoding.EncodeToString(rec.PubKey)})
 			go a.h.sendUpLogin(ctx, conn, req.DeviceID, rec.NodeID, rec.PubKey, req.Sig, req.Alg, req.TS, req.Nonce)
 			return
 		}
-		a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
+		send(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
 		return
 	}
 	// not found locally, try authority
@@ -92,7 +96,7 @@ func (a *loginAction) Handle(ctx context.Context, conn core.IConnection, hdr cor
 		a.h.forward(ctx, authority, actionAssistLogin, req)
 		return
 	}
-	a.h.sendResp(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
+	send(ctx, conn, hdr, actionLoginResp, respData{Code: 4001, Msg: "invalid signature"})
 }
 
 type loginRespAction struct {

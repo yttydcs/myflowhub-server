@@ -102,6 +102,15 @@ func TestLoginHandlerPermsInvalidate(t *testing.T) {
 	regMsg := mustJSON(map[string]any{"action": "register", "data": map[string]any{"device_id": "dev-1"}})
 	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2)
 	h.OnReceive(ctx, connTarget, hdr, regMsg)
+	if len(connTarget.sent) != 1 {
+		t.Fatalf("expected 1 register_resp, got %d", len(connTarget.sent))
+	}
+	if connTarget.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if connTarget.sent[0].hdr.Major() != header.MajorOKResp {
+		t.Fatalf("expected register_resp major=%d, got %d", header.MajorOKResp, connTarget.sent[0].hdr.Major())
+	}
 	nodeIDVal, _ := connTarget.GetMeta("nodeID")
 	nodeID, _ := nodeIDVal.(uint32)
 	if nodeID == 0 {
@@ -303,6 +312,12 @@ func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
 	if len(conn.sent) == 0 {
 		t.Fatalf("expected revoke_resp for permission failure")
 	}
+	if conn.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if conn.sent[0].hdr.Major() != header.MajorOKResp {
+		t.Fatalf("expected revoke_resp major=%d, got %d", header.MajorOKResp, conn.sent[0].hdr.Major())
+	}
 	var msg struct {
 		Action string          `json:"action"`
 		Data   json.RawMessage `json:"data"`
@@ -317,6 +332,55 @@ func TestLoginHandlerRevokePermissionDenied(t *testing.T) {
 	_ = json.Unmarshal(msg.Data, &resp)
 	if resp.Code != 4403 {
 		t.Fatalf("expected 4403, got %d", resp.Code)
+	}
+}
+
+func TestLoginHandlerLoginDirectFailureMajorOK(t *testing.T) {
+	cfg := config.NewMap(nil)
+	h := newLoginHandlerForTest(cfg)
+	cm := connmgr.New()
+	device := newAuthConn("device")
+	_ = cm.Add(device)
+	srv := newAuthServer(1, cm)
+	ctx := core.WithServerContext(context.Background(), srv)
+
+	loginMsg := mustJSON(map[string]any{"action": "login", "data": map[string]any{"device_id": "dev-1", "ts": 1, "nonce": "n1", "sig": "s1", "alg": "ES256"}})
+	const msgID uint32 = 77
+	const traceID uint32 = 88
+	hdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(2).WithMsgID(msgID).WithTraceID(traceID)
+
+	h.OnReceive(ctx, device, hdr, loginMsg)
+
+	if len(device.sent) != 1 {
+		t.Fatalf("expected 1 login_resp, got %d", len(device.sent))
+	}
+	if device.sent[0].hdr == nil {
+		t.Fatalf("expected response header")
+	}
+	if device.sent[0].hdr.Major() != header.MajorOKResp {
+		t.Fatalf("expected login_resp major=%d, got %d", header.MajorOKResp, device.sent[0].hdr.Major())
+	}
+	if device.sent[0].hdr.GetMsgID() != msgID {
+		t.Fatalf("expected msg_id=%d, got %d", msgID, device.sent[0].hdr.GetMsgID())
+	}
+	if device.sent[0].hdr.GetTraceID() != traceID {
+		t.Fatalf("expected trace_id=%d, got %d", traceID, device.sent[0].hdr.GetTraceID())
+	}
+
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	_ = json.Unmarshal(device.sent[0].payload, &msg)
+	if msg.Action != "login_resp" {
+		t.Fatalf("unexpected action %s", msg.Action)
+	}
+	var body struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(msg.Data, &body)
+	if body.Code != 4001 {
+		t.Fatalf("expected code=4001, got %d", body.Code)
 	}
 }
 

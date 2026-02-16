@@ -32,12 +32,12 @@ func (h *LoginHandler) handleRevoke(ctx context.Context, conn core.IConnection, 
 	}
 	actorID := permission.SourceNodeID(hdr, conn)
 	if !h.hasPermission(actorID, permission.AuthRevoke) {
-		h.sendResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 4403, Msg: "permission denied", DeviceID: req.DeviceID, NodeID: req.NodeID})
+		h.sendDirectResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 4403, Msg: "permission denied", DeviceID: req.DeviceID, NodeID: req.NodeID})
 		return
 	}
 	removed := h.removeBinding(req.DeviceID)
 	if removed {
-		h.sendResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: req.NodeID})
+		h.sendDirectResp(ctx, conn, hdr, actionRevokeResp, respData{Code: 1, Msg: "ok", DeviceID: req.DeviceID, NodeID: req.NodeID})
 	}
 	// broadcast downstream and upstream except source
 	h.broadcast(ctx, conn, actionRevoke, req)
