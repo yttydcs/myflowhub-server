@@ -12,7 +12,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/eventbus"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
-	auth "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	auth "github.com/yttydcs/myflowhub-server/subproto/auth"
 )
 
 func TestLoginHandlerGetPermsAndListRoles(t *testing.T) {

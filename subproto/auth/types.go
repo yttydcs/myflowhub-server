@@ -1,6 +1,6 @@
 package auth
 
-import protocol "github.com/yttydcs/myflowhub-server/protocol/auth"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/auth"
 
 // 动作常量定义
 const (

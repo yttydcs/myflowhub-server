@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	authhandler "github.com/yttydcs/myflowhub-server/internal/handler/auth"
+	authhandler "github.com/yttydcs/myflowhub-server/subproto/auth"
 	exechandler "github.com/yttydcs/myflowhub-server/subproto/exec"
 	filehandler "github.com/yttydcs/myflowhub-server/subproto/file"
 	flowhandler "github.com/yttydcs/myflowhub-server/subproto/flow"
