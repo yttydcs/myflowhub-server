@@ -299,7 +299,7 @@ func (h *Handler) sendCallRespToNode(ctx context.Context, target uint32, resp Ca
 	}
 	body, _ := json.Marshal(message{Action: actionCallResp, Data: mustJSON(resp)})
 	hdr := (&header.HeaderTcp{}).
-		WithMajor(header.MajorCmd).
+		WithMajor(header.MajorOKResp).
 		WithSubProto(SubProtoExec).
 		WithSourceID(srv.NodeID()).
 		WithTargetID(target)

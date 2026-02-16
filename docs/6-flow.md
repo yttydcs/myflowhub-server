@@ -28,6 +28,10 @@ HeaderTcp 与路由约定
 --------------------
 - SubProto 固定为 `6`（预留给 `flow`）。
 - `TargetID` 仍由核心路由自动转发到目标节点；本协议的“逐级授权”不依赖 `TargetID=0` 等特殊语义。
+- Major 约定（统一框架规则）：
+  - 请求帧（`set/run/status/list/get`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行）。
+  - 响应帧（`*_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发；中间节点不需要进 handler 转发）。
+  - 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达。
 
 逐级授权模型（统一规则）
 ----------------------

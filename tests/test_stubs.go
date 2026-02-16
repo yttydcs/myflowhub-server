@@ -19,6 +19,7 @@ type stubServer struct {
 type sendCall struct {
 	connID string
 	target uint32
+	major  uint8
 }
 
 func (s *stubServer) Start(context.Context) error          { return nil }
@@ -36,7 +37,7 @@ func (s *stubServer) EventBus() eventbus.IBus {
 	return s.bus
 }
 func (s *stubServer) Send(_ context.Context, connID string, hdr core.IHeader, _ []byte) error {
-	s.sends = append(s.sends, sendCall{connID: connID, target: hdr.TargetID()})
+	s.sends = append(s.sends, sendCall{connID: connID, target: hdr.TargetID(), major: hdr.Major()})
 	return nil
 }
 

@@ -944,7 +944,7 @@ func (h *Handler) sendCtrlToNode(ctx context.Context, target uint32, msg message
 	body, _ := json.Marshal(msg)
 
 	hdr := (&header.HeaderTcp{}).
-		WithMajor(header.MajorCmd).
+		WithMajor(header.MajorOKResp).
 		WithSubProto(SubProtoFlow).
 		WithSourceID(src).
 		WithTargetID(target)

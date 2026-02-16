@@ -25,6 +25,10 @@ HeaderTcp 与路由约定
 - SubProto 固定为 `7`（预留给 `exec`）。
 - `TargetID` 由核心路由自动转发到目标节点。
 - 本协议依赖“逐级上送直到可向下转发”的一致性路由语义（见下文）。
+- Major 约定（统一框架规则）：
+  - 请求帧（`call`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行/转发）。
+  - 响应帧（`call_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发；中间节点不需要进 handler 转发）。
+  - 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达。
 
 逐级上送与裁决（downstream 判定）
 ------------------------------
