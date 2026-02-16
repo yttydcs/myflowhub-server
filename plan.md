@@ -152,5 +152,8 @@
 - 禁止计划外改动：若需要引入 Module registry/Deps 或运行期选择，必须另起 workflow。
 
 ## 执行记录
-- 2026-02-16：创建本 workflow worktree 与计划文档（待确认后进入 3.2）。
-
+- 2026-02-16：创建本 workflow worktree 与计划文档（进入 3.2）。
+- 2026-02-16：完成 BT1（defaultset build tags 工厂函数拆分）；提交：`b377c1c`。
+- 2026-02-16：完成 BT2（Windows 回归通过）：
+  - 默认构建：`go test ./... -count=1 -p 1`
+  - 最大裁切：`go test ./... -count=1 -p 1 -tags "nofile noflow noexec notopicbus novarstore noauth"`
