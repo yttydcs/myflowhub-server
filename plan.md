@@ -148,5 +148,6 @@
 - 禁止计划外改动：若需要引入 module registry/build tags 等更大调整，必须回到 3.1 更新计划并重新确认。
 
 ## 执行记录
-- 2026-02-16：创建本 workflow worktree 与计划文档（待确认后进入 3.2）。
-
+- 2026-02-16：创建本 workflow worktree 与计划文档。
+- 2026-02-16：完成 DS1-DS3；回归 `go test ./... -count=1 -p 1` 通过（Windows）。
+- 2026-02-16：完成 DS4（Code Review 通过；归档文档补齐）。
