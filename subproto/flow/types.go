@@ -1,6 +1,6 @@
 package flow
 
-import protocol "github.com/yttydcs/myflowhub-server/protocol/flow"
+import protocol "github.com/yttydcs/myflowhub-proto/protocol/flow"
 
 // 子协议：flow（DAG 工作流调度）。
 const SubProtoFlow uint8 = protocol.SubProtoFlow
