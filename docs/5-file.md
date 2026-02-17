@@ -5,7 +5,7 @@ file 协议（SubProto=5）规范（草案）
 ----
 - 仅描述新增 `file` 子协议的设计目标与消息格式（用于节点间文件传输）。
 - 依赖核心框架的路由能力（`TargetID` 自动路由）与连接角色（`role=parent/child`）。
-- **注意**：`MajorCmd/MajorMsg` 在框架层仅代表“中间节点是否建议进入 handler/用于缓存”的语义；本协议不将 Major 作为“控制/数据”判定依据。
+- **注意**：Major 在框架层代表“是否需要逐跳进入 handler / 或可由 Core 快速转发”的路由语义；本协议不将 Major 作为 CTRL/DATA/ACK 判定依据（CTRL/DATA/ACK 仍由 payload[0] 决定）。
 
 总览
 ----
@@ -31,15 +31,18 @@ file 协议（SubProto=5）规范（草案）
 - `0x02`：DATA（数据帧，二进制）
 - `0x03`：ACK（确认帧，二进制）
 
-**建议 Major**（仅提示，不作为判定依据）：
-- CTRL：建议 `MajorCmd`
-- DATA/ACK：建议 `MajorMsg`
+**建议 Major**（统一框架规则；不作为 CTRL/DATA/ACK 判定依据）：
+- CTRL 请求（`read/write`）：`MajorCmd`（逐跳进入 handler，用于判权/转交）
+- CTRL 响应（`read_resp/write_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发）
+- DATA/ACK：`MajorMsg`（端到端数据面帧，按 `TargetID` 由 Core 快速转发）
+- 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达
 
 HeaderTcp 与路由约定
 --------------------
 - SubProto 固定为 `5`（预留给 `file`）。
 - `TargetID=0` 在核心中表示“向子节点广播（不回父）”，**不要**用 0 表示“上送父节点”。
-- **CTRL 逐级判权/转交**：核心 `PreRouting` 对“来自子连接”的 `file` 控制帧（`payload[0]==0x01`）不会做自动转发，而是进入 handler 由协议逻辑决定向上/向下转交，避免子节点通过“直接填最终目标 TargetID”绕过判权链路。
+- **CTRL 请求逐级判权/转交**：`read/write` 控制请求帧使用 `MajorCmd`，Core 不做自动转发而是进入 handler 由协议逻辑决定向上/向下转交，避免子节点通过“直接填最终目标 TargetID”绕过判权链路。
+- **CTRL 响应端到端返回**：`read_resp/write_resp` 响应帧使用 `MajorOKResp`，按 `TargetID` 由 Core 快速转发返回请求方（中间节点无需进入 file handler）。
 - SourceID/TargetID 建议（端到端）：
   - CTRL：
     - 请求阶段：`SourceID=请求方`，`TargetID=请求方的直接父Hub`（使其进入父Hub 的 handler 做判权与上送）。

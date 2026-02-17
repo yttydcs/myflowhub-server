@@ -383,7 +383,7 @@ func (h *Handler) sendCtrlToNode(ctx context.Context, target uint32, msg message
 	copy(payload[1:], body)
 
 	hdr := (&header.HeaderTcp{}).
-		WithMajor(header.MajorCmd).
+		WithMajor(header.MajorOKResp).
 		WithSubProto(SubProtoFile).
 		WithSourceID(src).
 		WithTargetID(target)
