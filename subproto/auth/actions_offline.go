@@ -5,40 +5,31 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
-type offlineAction struct {
-	subproto.BaseAction
-	h        *LoginHandler
-	assisted bool
-}
-
-func (a *offlineAction) Name() string {
-	if a.assisted {
-		return actionAssistOffline
-	}
-	return actionOffline
-}
-func (a *offlineAction) RequireAuth() bool { return true }
-func (a *offlineAction) Handle(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handleOffline(ctx context.Context, conn core.IConnection, data json.RawMessage, assisted bool) {
 	var req offlineData
 	if err := json.Unmarshal(data, &req); err != nil || req.DeviceID == "" {
 		return
 	}
-	a.h.removeBinding(req.DeviceID)
-	a.h.removeIndexes(ctx, req.NodeID, conn)
-	if !a.assisted {
+	h.removeBinding(req.DeviceID)
+	h.removeIndexes(ctx, req.NodeID, conn)
+	if !assisted {
 		// forward to parent
-		if parent := a.h.selectAuthorityConn(ctx); parent != nil && (conn == nil || parent.ID() != conn.ID()) {
-			a.h.forward(ctx, parent, actionAssistOffline, req)
+		if parent := h.selectAuthorityConn(ctx); parent != nil && (conn == nil || parent.ID() != conn.ID()) {
+			h.forward(ctx, parent, actionAssistOffline, req)
 		}
 	}
 }
 
 func registerOfflineActions(h *LoginHandler) []core.SubProcessAction {
 	return []core.SubProcessAction{
-		&offlineAction{h: h, assisted: false},
-		&offlineAction{h: h, assisted: true},
+		kit.NewAction(actionOffline, func(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleOffline(ctx, conn, data, false)
+		}, kit.WithRequireAuth(true)),
+		kit.NewAction(actionAssistOffline, func(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleOffline(ctx, conn, data, true)
+		}, kit.WithRequireAuth(true)),
 	}
 }

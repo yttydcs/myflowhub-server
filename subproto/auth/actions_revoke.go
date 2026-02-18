@@ -6,22 +6,15 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
-type revokeAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *revokeAction) Name() string      { return actionRevoke }
-func (a *revokeAction) RequireAuth() bool { return true }
-func (a *revokeAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
-	a.h.handleRevoke(ctx, conn, hdr, data)
-}
-
 func registerRevokeActions(h *LoginHandler) []core.SubProcessAction {
-	return []core.SubProcessAction{&revokeAction{h: h}}
+	return []core.SubProcessAction{
+		kit.NewAction(actionRevoke, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleRevoke(ctx, conn, hdr, data)
+		}, kit.WithRequireAuth(true)),
+	}
 }
 
 // revoke handling: broadcast; respond only if deleted

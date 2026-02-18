@@ -6,118 +6,23 @@ import (
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
-
-type registerAction struct {
-	subproto.BaseAction
-	h        *LoginHandler
-	assisted bool
-}
-
-func (a *registerAction) Name() string {
-	if a.assisted {
-		return actionAssistRegister
-	}
-	return actionRegister
-}
-func (a *registerAction) RequireAuth() bool { return false }
-func (a *registerAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
-	a.h.handleRegister(ctx, conn, hdr, data, a.assisted)
-}
-
-type registerRespAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *registerRespAction) Name() string      { return actionRegisterResp }
-func (a *registerRespAction) RequireAuth() bool { return false }
-func (a *registerRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-	var resp respData
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return
-	}
-	if resp.DeviceID == "" {
-		return
-	}
-	pending, ok := a.h.popPending(resp.DeviceID)
-	if !ok {
-		return
-	}
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return
-	}
-	if c, found := srv.ConnManager().Get(pending.connID); found {
-		var pubRaw []byte
-		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
-			if _, raw, err := parseECPubKey(pk); err == nil {
-				pubRaw = raw
-			}
-		}
-		a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
-		a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
-		a.h.applyHubID(ctx, c, resp.HubID)
-		if strings.TrimSpace(resp.NodePub) != "" {
-			a.h.addTrustedNode(resp.NodeID, resp.NodePub)
-		}
-		if resp.HubID == 0 {
-			resp.HubID = srv.NodeID()
-		}
-		a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
-	}
-}
-
-type assistRegisterRespAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *assistRegisterRespAction) Name() string      { return actionAssistRegisterResp }
-func (a *assistRegisterRespAction) RequireAuth() bool { return false }
-func (a *assistRegisterRespAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
-	var resp respData
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return
-	}
-	if resp.DeviceID == "" {
-		return
-	}
-	pending, ok := a.h.popPending(resp.DeviceID)
-	if !ok {
-		return
-	}
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return
-	}
-	if c, found := srv.ConnManager().Get(pending.connID); found {
-		var pubRaw []byte
-		if pk := strings.TrimSpace(resp.PubKey); pk != "" {
-			if _, raw, err := parseECPubKey(pk); err == nil {
-				pubRaw = raw
-			}
-		}
-		a.h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
-		a.h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
-		a.h.applyHubID(ctx, c, resp.HubID)
-		if strings.TrimSpace(resp.NodePub) != "" {
-			a.h.addTrustedNode(resp.NodeID, resp.NodePub)
-		}
-		if resp.HubID == 0 {
-			resp.HubID = srv.NodeID()
-		}
-		a.h.sendResp(ctx, c, a.h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
-	}
-}
 
 func registerRegisterActions(h *LoginHandler) []core.SubProcessAction {
 	return []core.SubProcessAction{
-		&registerAction{h: h, assisted: false},
-		&registerAction{h: h, assisted: true},
-		&registerRespAction{h: h},
-		&assistRegisterRespAction{h: h},
+		kit.NewAction(actionRegister, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleRegister(ctx, conn, hdr, data, false)
+		}),
+		kit.NewAction(actionAssistRegister, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleRegister(ctx, conn, hdr, data, true)
+		}),
+		kit.NewAction(actionRegisterResp, func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleRegisterResp(ctx, data)
+		}),
+		kit.NewAction(actionAssistRegisterResp, func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleRegisterResp(ctx, data)
+		}),
 	}
 }
 
@@ -218,13 +123,12 @@ func (h *LoginHandler) handleRegisterResp(ctx context.Context, data json.RawMess
 		h.saveBinding(ctx, c, resp.DeviceID, resp.NodeID, pubRaw)
 		h.applyRolePerms(resp.DeviceID, resp.NodeID, resp.Role, resp.Perms, c)
 		h.applyHubID(ctx, c, resp.HubID)
-		if strings.TrimSpace(resp.PubKey) != "" {
-			h.addTrustedNode(resp.NodeID, resp.PubKey)
+		if strings.TrimSpace(resp.NodePub) != "" {
+			h.addTrustedNode(resp.NodeID, resp.NodePub)
 		}
 		if resp.HubID == 0 {
 			resp.HubID = srv.NodeID()
 		}
 		h.sendResp(ctx, c, h.buildPendingRespHeader(ctx, pending), actionRegisterResp, resp)
-		h.persistState()
 	}
 }

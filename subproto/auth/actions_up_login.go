@@ -8,17 +8,10 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
-type upLoginAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *upLoginAction) Name() string      { return actionUpLogin }
-func (a *upLoginAction) RequireAuth() bool { return true }
-func (a *upLoginAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handleUpLogin(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
 	var req upLoginData
 	if err := json.Unmarshal(data, &req); err != nil || req.NodeID == 0 {
 		return
@@ -46,11 +39,11 @@ func (a *upLoginAction) Handle(ctx context.Context, conn core.IConnection, hdr c
 	if strings.TrimSpace(req.SenderSig) == "" || !strings.EqualFold(strings.TrimSpace(req.SenderAlg), defaultAlgES256) || req.SenderID == 0 {
 		return
 	}
-	senderPub := a.h.lookupTrustedNodePub(req.SenderID, conn)
+	senderPub := h.lookupTrustedNodePub(req.SenderID, conn)
 	if senderPub == nil && strings.TrimSpace(req.SenderPub) != "" {
 		if pub, raw, err := parseECPubKey(req.SenderPub); err == nil {
 			senderPub = pub
-			a.h.addTrustedNode(req.SenderID, req.SenderPub)
+			h.addTrustedNode(req.SenderID, req.SenderPub)
 			conn.SetMeta("node_pubkey", raw)
 		}
 	}
@@ -58,22 +51,12 @@ func (a *upLoginAction) Handle(ctx context.Context, conn core.IConnection, hdr c
 		return
 	}
 	// 检查路由冲突
-	if !a.h.canAddRoute(ctx, req.NodeID, raw) {
+	if !h.canAddRoute(ctx, req.NodeID, raw) {
 		return
 	}
 	conn.SetMeta("pubkey", raw)
-	a.h.addRouteIndex(ctx, req.NodeID, conn)
-	a.h.sendResp(ctx, conn, hdr, actionUpLoginResp, respData{Code: 1, Msg: "ok", NodeID: req.NodeID, PubKey: req.PubKey})
-}
-
-type upLoginRespAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *upLoginRespAction) Name() string      { return actionUpLoginResp }
-func (a *upLoginRespAction) RequireAuth() bool { return true }
-func (a *upLoginRespAction) Handle(context.Context, core.IConnection, core.IHeader, json.RawMessage) {
+	h.addRouteIndex(ctx, req.NodeID, conn)
+	h.sendResp(ctx, conn, hdr, actionUpLoginResp, respData{Code: 1, Msg: "ok", NodeID: req.NodeID, PubKey: req.PubKey})
 }
 
 func (h *LoginHandler) sendUpLogin(ctx context.Context, conn core.IConnection, deviceID string, nodeID uint32, pubKey []byte, devSig, devAlg string, devTS int64, devNonce string) {
@@ -118,5 +101,14 @@ func (h *LoginHandler) sendUpLogin(ctx context.Context, conn core.IConnection, d
 	if srv := core.ServerFromContext(ctx); srv != nil {
 		_ = srv.Send(ctx, parent.ID(), hdr, payload)
 		return
+	}
+}
+
+func registerUpLoginActions(h *LoginHandler) []core.SubProcessAction {
+	return []core.SubProcessAction{
+		kit.NewAction(actionUpLogin, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
+			h.handleUpLogin(ctx, conn, hdr, data)
+		}, kit.WithRequireAuth(true)),
+		kit.NewAction(actionUpLoginResp, nil, kit.WithRequireAuth(true)),
 	}
 }

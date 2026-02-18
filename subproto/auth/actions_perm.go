@@ -7,41 +7,27 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
-type getPermsAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *getPermsAction) Name() string      { return actionGetPerms }
-func (a *getPermsAction) RequireAuth() bool { return true }
-func (a *getPermsAction) Handle(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handleGetPerms(ctx context.Context, conn core.IConnection, data json.RawMessage) {
 	var req permsQueryData
 	if err := json.Unmarshal(data, &req); err != nil || req.NodeID == 0 {
-		a.h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 400, Msg: "invalid node id"})
+		h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 400, Msg: "invalid node id"})
 		return
 	}
-	role, perms, ok := a.h.lookupByNode(req.NodeID)
+	role, perms, ok := h.lookupByNode(req.NodeID)
 	if !ok {
-		a.h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 4404, Msg: "not found", NodeID: req.NodeID})
+		h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 4404, Msg: "not found", NodeID: req.NodeID})
 		return
 	}
-	a.h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 1, Msg: "ok", NodeID: req.NodeID, Role: role, Perms: perms})
+	h.sendResp(ctx, conn, nil, actionGetPermsResp, respData{Code: 1, Msg: "ok", NodeID: req.NodeID, Role: role, Perms: perms})
 }
 
-type listRolesAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *listRolesAction) Name() string      { return actionListRoles }
-func (a *listRolesAction) RequireAuth() bool { return true }
-func (a *listRolesAction) Handle(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handleListRoles(ctx context.Context, conn core.IConnection, data json.RawMessage) {
 	var req listRolesReq
 	_ = json.Unmarshal(data, &req)
-	snapshot := a.h.listRolePerms()
+	snapshot := h.listRolePerms()
 	filtered, total := filterRolePerms(snapshot, req)
 	resp := struct {
 		Code  int             `json:"code"`
@@ -57,7 +43,7 @@ func (a *listRolesAction) Handle(ctx context.Context, conn core.IConnection, _ c
 	raw, _ := json.Marshal(resp)
 	msg := message{Action: actionListRolesResp, Data: raw}
 	body, _ := json.Marshal(msg)
-	hdr := a.h.buildHeader(ctx, nil)
+	hdr := h.buildHeader(ctx, nil)
 	if srv := core.ServerFromContext(ctx); srv != nil && conn != nil {
 		_ = srv.Send(ctx, conn.ID(), hdr, body)
 		return
@@ -67,19 +53,12 @@ func (a *listRolesAction) Handle(ctx context.Context, conn core.IConnection, _ c
 	}
 }
 
-type permsInvalidateAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *permsInvalidateAction) Name() string      { return actionPermsInvalidate }
-func (a *permsInvalidateAction) RequireAuth() bool { return true }
-func (a *permsInvalidateAction) Handle(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handlePermsInvalidate(ctx context.Context, data json.RawMessage) {
 	var req invalidateData
 	_ = json.Unmarshal(data, &req)
-	a.h.invalidateCache(req.NodeIDs)
+	h.invalidateCache(req.NodeIDs)
 	if req.Refresh {
-		a.h.refreshPerms(ctx, req.NodeIDs)
+		h.refreshPerms(ctx, req.NodeIDs)
 	}
 	// 清理当前连接的 meta
 	if srv := core.ServerFromContext(ctx); srv != nil {
@@ -121,32 +100,33 @@ func (a *permsInvalidateAction) Handle(ctx context.Context, _ core.IConnection, 
 	}
 }
 
-type permsSnapshotAction struct {
-	subproto.BaseAction
-	h *LoginHandler
-}
-
-func (a *permsSnapshotAction) Name() string      { return actionPermsSnapshot }
-func (a *permsSnapshotAction) RequireAuth() bool { return true }
-func (a *permsSnapshotAction) Handle(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+func (h *LoginHandler) handlePermsSnapshot(ctx context.Context, conn core.IConnection, data json.RawMessage) {
 	if len(data) == 0 {
 		return
 	}
 	var snap permission.Snapshot
 	if err := json.Unmarshal(data, &snap); err != nil {
-		a.h.log.Warn("invalid perms snapshot", "err", err)
+		h.log.Warn("invalid perms snapshot", "err", err)
 		return
 	}
-	a.h.applyPermSnapshot(ctx, snap)
+	h.applyPermSnapshot(ctx, snap)
 	// forward downstream except parent
-	a.h.broadcastPermsSnapshot(ctx, conn, data)
+	h.broadcastPermsSnapshot(ctx, conn, data)
 }
 
 func registerPermActions(h *LoginHandler) []core.SubProcessAction {
 	return []core.SubProcessAction{
-		&getPermsAction{h: h},
-		&listRolesAction{h: h},
-		&permsInvalidateAction{h: h},
-		&permsSnapshotAction{h: h},
+		kit.NewAction(actionGetPerms, func(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleGetPerms(ctx, conn, data)
+		}, kit.WithRequireAuth(true)),
+		kit.NewAction(actionListRoles, func(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handleListRoles(ctx, conn, data)
+		}, kit.WithRequireAuth(true)),
+		kit.NewAction(actionPermsInvalidate, func(ctx context.Context, _ core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handlePermsInvalidate(ctx, data)
+		}, kit.WithRequireAuth(true)),
+		kit.NewAction(actionPermsSnapshot, func(ctx context.Context, conn core.IConnection, _ core.IHeader, data json.RawMessage) {
+			h.handlePermsSnapshot(ctx, conn, data)
+		}, kit.WithRequireAuth(true)),
 	}
 }
