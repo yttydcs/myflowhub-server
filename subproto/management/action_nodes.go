@@ -5,43 +5,31 @@ import (
 	"encoding/json"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-core/subproto"
+	"github.com/yttydcs/myflowhub-server/subproto/kit"
 )
 
-// list_nodes: 列出直接连接的节点，并标记是否为父节点（视为有子节点）
-type listNodesAction struct {
-	subproto.BaseAction
-	h *ManagementHandler
+func registerListNodesActions(h *ManagementHandler) core.SubProcessAction {
+	return kit.NewAction(actionListNodes, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, _ json.RawMessage) {
+		srv := core.ServerFromContext(ctx)
+		if srv == nil {
+			return
+		}
+		nodes := enumerateDirectNodes(srv.ConnManager())
+		h.sendActionResp(ctx, conn, hdr, actionListNodesResp, listNodesResp{Code: 1, Msg: "ok", Nodes: nodes})
+	})
 }
 
-func (a *listNodesAction) Name() string      { return actionListNodes }
-func (a *listNodesAction) RequireAuth() bool { return false }
-func (a *listNodesAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage) {
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return
-	}
-	nodes := enumerateDirectNodes(srv.ConnManager())
-	a.h.sendActionResp(ctx, conn, hdr, actionListNodesResp, listNodesResp{Code: 1, Msg: "ok", Nodes: nodes})
-}
-
-// list_subtree: 返回本节点 + 直接连接的节点（最佳努力子树）
-type listSubtreeAction struct {
-	subproto.BaseAction
-	h *ManagementHandler
-}
-
-func (a *listSubtreeAction) Name() string      { return actionListSubtree }
-func (a *listSubtreeAction) RequireAuth() bool { return false }
-func (a *listSubtreeAction) Handle(ctx context.Context, conn core.IConnection, hdr core.IHeader, _ json.RawMessage) {
-	srv := core.ServerFromContext(ctx)
-	if srv == nil {
-		return
-	}
-	nodes := enumerateDirectNodes(srv.ConnManager())
-	// 包含自身
-	nodes = append(nodes, nodeInfo{NodeID: srv.NodeID(), HasChildren: len(nodes) > 0})
-	a.h.sendActionResp(ctx, conn, hdr, actionListSubtreeResp, listSubtreeResp{Code: 1, Msg: "ok", Nodes: nodes})
+func registerListSubtreeActions(h *ManagementHandler) core.SubProcessAction {
+	return kit.NewAction(actionListSubtree, func(ctx context.Context, conn core.IConnection, hdr core.IHeader, _ json.RawMessage) {
+		srv := core.ServerFromContext(ctx)
+		if srv == nil {
+			return
+		}
+		nodes := enumerateDirectNodes(srv.ConnManager())
+		// 包含自身
+		nodes = append(nodes, nodeInfo{NodeID: srv.NodeID(), HasChildren: len(nodes) > 0})
+		h.sendActionResp(ctx, conn, hdr, actionListSubtreeResp, listSubtreeResp{Code: 1, Msg: "ok", Nodes: nodes})
+	})
 }
 
 func enumerateDirectNodes(cm core.IConnectionManager) []nodeInfo {

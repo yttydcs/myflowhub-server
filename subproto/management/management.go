@@ -34,12 +34,9 @@ func (h *ManagementHandler) Init() bool {
 
 func (h *ManagementHandler) initActions() {
 	h.ResetActions()
-	h.RegisterAction(&nodeEchoAction{h: h})
-	h.RegisterAction(&configGetAction{h: h})
-	h.RegisterAction(&configSetAction{h: h})
-	h.RegisterAction(&configListAction{h: h})
-	h.RegisterAction(&listNodesAction{h: h})
-	h.RegisterAction(&listSubtreeAction{h: h})
+	for _, act := range registerActions(h) {
+		h.RegisterAction(act)
+	}
 }
 
 func (h *ManagementHandler) OnReceive(ctx context.Context, conn core.IConnection, hdr core.IHeader, payload []byte) {
