@@ -1,101 +1,92 @@
-# Plan - Server：File CTRL 响应继承 MsgID/TraceID（支持 SDK v1 Awaiter）（PR18-SERVER-FileCtrl-Ids）
+# Plan - Server：改用 semver 依赖并移除 replace（PR19-SERVER-SemVer）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`fix/file-ctrl-inherit-ids`
-- Worktree：`d:\project\MyFlowHub3\worktrees\pr18-file-ctrl-await\MyFlowHub-Server`
+- 分支：`chore/server-semver-deps`
+- Worktree：`d:\project\MyFlowHub3\worktrees\pr19-semver-deps\MyFlowHub-Server`
 - Base：`main`
 - 参考：
   - `d:\project\MyFlowHub3\target.md`
   - `d:\project\MyFlowHub3\repos.md`
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文）
-- 依赖（本地 replace/junction）：
-  - `..\MyFlowHub-Core` / `..\MyFlowHub-Proto`
+- 目标：`go.mod` 移除本地 `replace`，依赖改为：
+  - `github.com/yttydcs/myflowhub-core@v0.2.0`
+  - `github.com/yttydcs/myflowhub-proto@v0.1.0`
 
 ## 约束（边界）
-- 仅改 `subproto/file` 的 CTRL 响应帧（`read_resp/write_resp`）：
-  - 继承请求头的 `MsgID/TraceID`；
-  - `Major` 保持 `MajorOKResp`（PR12 已落地）。
-- 不改 wire（SubProto/action/JSON/Kind 前缀均不变）。
-- 不改 File DATA/ACK 帧与传输状态机。
-- 不改其它子协议；不改 Core/Proto/SDK/Win。
-- 所有实现性改动只在本 worktree 内完成；`repo/` 仅用于合并/推送/集成验证。
+- 仅做依赖版本化（go.mod/go.sum）与归档文档；不改业务逻辑、不改 wire。
+- 验收必须使用 `GOWORK=off`。
 
 ## 当前状态（事实，可审计）
-- `file.read_resp/write_resp` 已使用 `MajorOKResp`（Core 可按 TargetID 快速转发）。
-- 但当前 `sendCtrlToNode` 从零构造响应头：未设置 `MsgID/TraceID`，导致 SDK v1 Awaiter 无法按 `MsgID+SubProto+Action` 匹配。
-- 请求帧逐跳转发使用 `header.CloneToTCPForForward`，会保留 `MsgID/TraceID`，因此只需补齐响应继承即可闭环。
+- Server 当前使用 `replace ../MyFlowHub-Core` / `replace ../MyFlowHub-Proto` 本地联调。
+- 本 workflow 要保证 Server 单仓 clone 时可直接 `go test ./...`（不依赖 go.work/replace）。
 
 ---
 
 ## 1) 需求分析
 
 ### 目标
-1) `read_resp/write_resp` 的响应 HeaderTcp 继承请求的 `MsgID/TraceID`（成功/失败均如此）。
-2) wire 不变；`MajorOKResp` 语义不变。
+1) Server 移除 `replace`，并锁定到 `core v0.2.0`、`proto v0.1.0`。
+2) `GOWORK=off go test ./...` 通过（真实拉取依赖）。
+3) 归档变更说明与回滚策略。
 
 ### 验收标准
-- 任意 `read_resp/write_resp`：`MsgID == req.MsgID` 且 `TraceID == req.TraceID`。
-- `go test ./... -count=1 -p 1` 通过。
+- `go.mod` 无 `replace github.com/yttydcs/myflowhub-* => ../...`
+- `GOWORK=off go test ./... -count=1 -p 1` 通过
 
 ---
 
 ## 2) 架构设计（分析）
 
 ### 总体方案（采用）
-- 在 `subproto/file` 发送 CTRL 响应处引入“基于请求头构造响应头”的逻辑：
-  - `MsgID/TraceID` 从请求头复制；
-  - `Major/SubProto/SourceID/TargetID` 保持既有语义（Source=本节点；Target=请求方）。
-
-### 备选对比
-- 备选 A：仅改 SDK（不采用）
-  - Server 侧不继承 `MsgID` 时 Awaiter 无法匹配，SDK 单改无解。
-- 备选 B：改 wire（不采用）
-  - 与策略 A（wire 不变）冲突。
-
-### 错误与安全
-- 不改变权限/裁决链路；错误仍通过 payload `code/msg` 表达。
-- `TraceID` 仅做继承，不新增敏感信息。
-
-### 性能与测试策略
-- 性能：构造响应头时复制两个 `uint32` 字段，开销可忽略。
-- 测试：单测断言响应继承；回归 `go test`。
+- 依赖通过 semver tag 引用，配合 go.sum 锁定：
+  - core：`v0.2.0`
+  - proto：`v0.1.0`
+- 本地多仓联调通过 `d:\project\MyFlowHub3\go.work`（不提交）实现；发布验收用 `GOWORK=off`。
 
 ---
 
 ## 3.1) 计划拆分（Checklist）
 
 ## 问题清单（阻塞：否）
-- 已确认：本 PR 纳入 Server 修复 `read_resp/write_resp` 继承 `MsgID/TraceID`，以支持 SDK v1 Awaiter。
+- 已确认依赖版本与验收方式：core=`v0.2.0`、proto=`v0.1.0`，验收使用 `GOWORK=off`。
 
-### FCI1 - 实现：响应继承 ID
-- 目标：`read_resp/write_resp` 的 HeaderTcp 继承请求 `MsgID/TraceID`。
+### SRVSEM1 - 调整 go.mod/go.sum（移除 replace + 固定版本）
+- 目标：Server 可在无 go.work/无 replace 下构建与测试。
 - 涉及文件：
-  - `subproto/file/handler.go`
+  - `go.mod`
+  - `go.sum`
 - 验收条件：
-  - 响应 `MsgID/TraceID` 与请求一致；`MajorOKResp` 不变。
+  - 移除 `replace`；
+  - `require` 指向 `core v0.2.0`、`proto v0.1.0`；
+  - `go mod tidy` 后工作区干净。
+- 测试点：
+  - `GOWORK=off go test ./...`
 - 回滚点：
-  - revert 本提交。
+  - revert 该提交。
 
-### FCI2 - 单测：断言继承 + 回归 Major
-- 目标：覆盖非法 `read/write` 触发 `*_resp`，断言 `MajorOKResp` 且继承 `MsgID/TraceID`。
-- 涉及文件：
-  - `tests/test_stubs.go`
-  - `tests/file_handler_test.go`
-- 验收条件：
-  - `go test ./...` 通过。
-
-### FCI3 - 回归测试
+### SRVSEM2 - 回归测试（GOWORK=off）
+- 目标：确保依赖真实拉取且 `go test` 通过。
 - 命令：
   - `$env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'`
   - `New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null`
+  - `$env:GOWORK='off'`
   - `go test ./... -count=1 -p 1`
 - 验收条件：通过。
 
-### FCI4 - Code Review（阶段 3.3）+ 归档变更（阶段 4）
-- 归档文件：
-  - `docs/change/2026-02-18_file-ctrl-inherit-ids.md`
-- 验收条件：
-  - Review 覆盖：需求/架构/性能/安全/测试；
-  - 归档包含：任务映射、关键决策、测试命令与回滚方案。
+### SRVSEM3 - 归档变更
+- 目标：记录依赖版本化变更、验证方式与回滚策略。
+- 涉及文件：
+  - `docs/change/2026-02-18_server-semver-deps.md`
+- 验收条件：文档可独立复现。
 
+### SRVSEM4 - Code Review（阶段 3.3）+ 归档（阶段 4）
+- 验收条件：Review 结论为“通过”。
+
+### SRVSEM5 - 合并（你确认结束 workflow 后执行）
+- 目标：合并到 `main` 并 push。
+- 步骤（在 `repo/MyFlowHub-Server` 执行）：
+  1) `git merge --ff-only origin/chore/server-semver-deps`
+  2) `git push origin main`
+- 回滚点：
+  - revert 合并提交（或 revert 分支提交）。
