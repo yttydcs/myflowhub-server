@@ -1,226 +1,206 @@
-# Plan - Server：assist_* / up_* / notify_* 代码层收敛（wire 不改）（PR2-3）
+# Plan - Server：action 注册模板化补齐（exec/flow/topicbus/management → kit.NewAction）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`refactor/server-action-template`
-- Worktree：`d:\project\MyFlowHub3\worktrees\pr2-3-action-template\MyFlowHub-Server`
-- Base：`main`
+- 分支：`refactor/server-action-kit`
+- Worktree：`d:\project\MyFlowHub3\worktrees\server-action-kit\MyFlowHub-Server`
+- Base：`origin/main`
 - 参考：
   - `d:\project\MyFlowHub3\target.md`
-  - `d:\project\MyFlowHub3\repos.md`（PR2-3：L230）
+  - `d:\project\MyFlowHub3\repos.md`
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文）
 
 ## 约束（边界）
-- 仅改 `MyFlowHub-Server`（本 PR 不改 Core/Proto/SDK/Win）。
-- wire 不改：SubProto/Action 字符串/JSON struct 保持不变。
-- 不改变既有 send/forward/header 语义（尤其 assist/up/notify 的逐跳链路）。
-- 优先落地 `subproto/auth` + `subproto/varstore`，其余子协议不要求本 PR 覆盖。
-- 执行顺序：先更新文档（`target.md`、`repos.md`）再改代码。
-- 验收必须使用 `GOWORK=off`（避免本地 `go.work` 干扰审计）。
+- 仅改 `MyFlowHub-Server`；不改 Core/Proto/SDK/Win。
+- wire 不改：SubProto 值 / Action 字符串 / JSON payload struct / HeaderTcp 语义均保持不变。
+- 仅做“注册方式/样板代码”收敛：从 `subproto.BaseAction` 包装类型/结构体，迁移到 `subproto/kit.NewAction(...)`。
+- Management 采用 **方案 A**：保留现有文件拆分（`action_*.go`），不合并成一个巨大的 `actions.go`。
+- 验收测试必须使用 `GOWORK=off`（避免本地 `go.work` 干扰审计）。
 
 ## 当前状态（事实，可审计）
-- `subproto/auth`、`subproto/varstore` 的 action 注册方式存在多种写法（struct/包装类型/assisted bool），导致：
-  - 增加 action 时容易漏项或写出风格不一致的实现；
-  - `assist_* / up_* / notify_*` 的工程承载不统一，未来拆库/裁切更难维护。
-- 本 PR 的目标是：**不改变行为** 的前提下，提供统一的 action 分类/注册模板，并将 auth+varstore 收敛到同一写法。
+- `subproto/kit.NewAction(...)` 已存在并在部分子协议（如 `auth/varstore`）使用。
+- `subproto/exec`、`subproto/flow`、`subproto/topicbus` 仍使用“包装类型 + BaseAction”的注册样式（`actions.go`）。
+- `subproto/management` 仍使用“每个 action 一个结构体 + BaseAction”，并在 `management.go:initActions()` 显式 `RegisterAction(&xxxAction{h:h})`。
 
 ---
 
 ## 1) 需求分析
 
 ### 目标
-1) Server 引入统一 action 模板：用最少样板完成 `Name/RequireAuth/Handle`。
-2) 提供 action 分类（Assist/Up/Notify/Local…）用于工程组织与可观测（不改 wire）。
-3) 将 `auth` 与 `varstore` 的 `assist_* / up_* / notify_*` 注册方式收敛到同一模板。
-4) 保持现有测试与端到端最小链路不回退。
+1) 将 `exec/flow/topicbus/management` 的 action 注册方式统一为 `kit.NewAction(...)`，做到风格一致、减少样板。
+2) 不改变任何 wire/行为：名称、路由、转发、返回、鉴权语义保持不变。
+3) 让后续新增 action 的成本更低、可读性更强（注册处“名称 + handler 绑定”一眼可见）。
 
 ### 范围（必须 / 可选 / 不做）
 - 必须：
-  - `subproto/kit` 新增 action 模板与 kind 分类能力。
-  - `subproto/auth`：迁移 action 注册（至少覆盖 assist_* 与 up_* 及其 resp）。
-  - `subproto/varstore`：迁移 action 注册（覆盖 assist_* / up_* / notify_* / var_changed / var_deleted）。
-  - 更新文档：`d:\project\MyFlowHub3\target.md`、`d:\project\MyFlowHub3\repos.md`（写清 PR2-3 的目标/边界/验收/风险/回滚）。
-- 可选（本 PR 不做，除非阻塞验收）：
-  - topicbus/file/flow/exec 的同步迁移到模板（后续拆分 PR 分阶段做）。
-  - 启动期重复 action 检测/告警（不影响现有语义）。
+  - `subproto/exec/actions.go` 迁移到 `kit.NewAction`。
+  - `subproto/flow/actions.go` 迁移到 `kit.NewAction`。
+  - `subproto/topicbus/actions.go` 迁移到 `kit.NewAction`。
+  - `subproto/management/*`（`action_echo.go` / `action_nodes.go` / `action_config.go` / `management.go`）迁移到 `kit.NewAction`（方案 A：保留拆分文件）。
+- 可选（仅当阻塞测试/验收时才做）：
+  - 为缺失覆盖的边界补充极小单测（优先复用现有 tests）。
 - 不做：
-  - 修改 action 名称、payload 结构、SubProto 值、HeaderTcp 编解码/major 路由规则。
-  - 基于 kind 的统一转发/发送策略（触及语义，必须另起 PR）。
+  - 修改 action 名称、消息结构、字段、SubProto 编号、HeaderTcp v2 规则。
+  - 调整 handler 的转发策略、鉴权策略、错误码语义。
 
 ### 使用场景
-- 子协议 handler 初始化期注册 action map（`Init()` → `ResetActions()` → `RegisterAction(...)`）。
-- 未来新增子协议时复用相同模板，避免每个协议都发明一套 `assist/up/notify` 写法。
+- 每个子协议 handler 在 `Init()` 内 `ResetActions()` 后注册 action map；收到帧后按 action 名称查表并调用 `Handle(...)`。
 
 ### 功能需求
-- action 模板需支持：
-  - 指定 `name`。
-  - 指定 `requireAuth`。
-  - 指定 `kind`（默认从 name 推导，允许覆盖）。
-  - 绑定 `Handle` 函数（闭包/函数指针）。
-- 不引入运行期热路径额外开销（kind 推导/校验仅在注册期完成）。
+- 每个原有 action 必须在 initActions 后可被查到（无漏注册）。
+- `RequireAuth()` 语义保持与原实现一致（本次涉及子协议当前均为 `false`）。
 
 ### 非功能需求
-- 可读性：注册处一眼能看出 action 名称与 handler 绑定关系。
-- 可扩展性：未来可在不改现有 action 的前提下增加更多 kind（例如 Resp/Local）。
-- 安全：不改变现有鉴权/permission 校验语义（`RequireAuth()`、逐跳裁决等）。
-- 性能：不在 `OnReceive` 每帧增加字符串判断或额外 marshal/unmarshal。
+- 性能：仅改注册期代码，不引入 `OnReceive` 热路径的额外开销。
+- 可读性：减少“每个 action 一个结构体”的样板；保持各子协议内部结构清晰。
+- 可扩展性：未来新增 action 只需要新增 `kit.NewAction(name, handler)` 一行（或极少量辅助函数）。
 
 ### 输入输出
-- 输入：action name（string），data（json.RawMessage），conn/hdr。
-- 输出：调用原有 handler 逻辑，产生相同的响应/转发行为。
+- 输入：action name（string）+ data（json.RawMessage）+ conn/hdr。
+- 输出：调用原有 handler 逻辑，产生与当前一致的响应/转发结果。
 
 ### 边界异常
-- action name 为空 → 不注册。
-- action 重名 → 按现有 `RegisterAction` 语义覆盖（如需告警，仅做启动期 log，不影响行为）。
+- action name 为空：`kit.NewAction` 返回 `nil`（调用方不应注册 `nil`）。
+- action 重名：保持 `RegisterAction` 现有覆盖语义（不在本 PR 引入额外告警/强校验）。
 
 ### 验收标准
-- 文档：
-  - `d:\project\MyFlowHub3\target.md` / `d:\project\MyFlowHub3\repos.md` 更新并与当前事实一致（例如 PR2-5/semver 不再写“未来/待合并”）。
-- 代码：
-  - `subproto/auth`、`subproto/varstore` 的 action 注册方式收敛到统一模板（本 PR 范围内）。
-  - wire 行为无变化（现有测试覆盖通过）。
-- 测试：
-  - `GOWORK=off go test ./... -count=1 -p 1` 通过。
-  - 冒烟步骤可执行（hub_server + management node_echo）。
+- 代码层面：上述 4 个子协议的 action 注册全部使用 `kit.NewAction`（不再出现 BaseAction wrapper/结构体 action 注册）。
+- 测试层面（必须）：
+  - `GOWORK=off go test ./... -count=1 -p 1`
+  - `GOWORK=off go test ./tests -run TestRootHubPing -count=1`
 
 ### 风险
-- 漏注册 action → runtime unknown action；依赖现有单测/集成测试降低风险。
-- 过度抽象 → 可读性下降；模板保持“薄”，只封装样板，不封装业务语义。
+- 漏注册 action 导致 runtime unknown action：通过回归测试 + 冒烟测试降低风险。
+- 迁移时误改业务逻辑：坚持只做“注册样式”变更，handler 业务函数不动。
+
+## 问题清单
+- 阻塞：否
 
 ---
 
 ## 2) 架构设计（分析）
 
-### 总体方案（采用：方案 A）
-- 在 `subproto/kit` 增加 `ActionKind` + `FuncAction`（实现 `core.SubProcessAction`），提供统一 `NewAction(...)` 构造。
-- kind 推导规则（默认）：
-  - 前缀 `assist_` → Assist
-  - 前缀 `up_` → Up
-  - 前缀 `notify_` → Notify
-  - 其它 → Local/Other
-  - 允许显式覆盖（用于 `var_changed/var_deleted` 这类无前缀但语义为通知的 action）。
-- 迁移方式：
-  - `auth`：将 assisted bool/resp/up 相关 action 的注册改为 `kit.NewAction(...)` 列表（业务逻辑不变）。
-  - `varstore`：移除 `varAction` wrapper，改为 `kit.NewAction(...)` 列表（业务逻辑不变）。
-- 不改：
-  - `subproto/kit` 现有 header/response helper 的语义（仅追加新文件/新能力）。
-  - Core 的路由规则/Dispatcher 行为。
+### 总体方案（采用）
+- 使用 `github.com/yttydcs/myflowhub-server/subproto/kit.NewAction(name, handler, opts...)` 替代当前的：
+  - `type xxxAction struct { subproto.BaseAction; name string; fn func(...) }`
+  - 或 `type xxxAction struct { subproto.BaseAction; h *Handler }` + `RegisterAction(&xxxAction{h:h})`
+- 迁移只影响“action 对象的构造方式”，不改变 handler 的调用链：
+  - `ResetActions()` → `RegisterAction(act)` → `LookupAction(name)` → `act.Handle(...)`
 
 ### 模块职责
-- `subproto/kit`：action 模板 + kind 工具（仅承载“样板”与分类元信息）。
-- `subproto/auth`：保留现有业务实现；替换 action 注册样板。
-- `subproto/varstore`：保留现有业务实现；替换 action 注册样板。
+- `subproto/kit`：提供 action 构造模板（函数式 action），减少样板；可选提供 kind（仅用于组织/可观测，不参与 wire）。
+- `subproto/*`：各子协议定义 action 常量、消息结构与业务 handler；仅在 `registerActions` 层绑定 action → handler。
 
-### 数据 / 调用流（不变）
-1) `OnReceive` 解包 `message{action,data}`
-2) `LookupAction(action)`
-3) `action.Handle(ctx, conn, hdr, data)` 执行业务逻辑
+### 数据 / 调用流
+1) Handler.Init → initActions → ResetActions → RegisterAction(kit.NewAction(...))
+2) OnReceive 解包出 `Action` + `Data`
+3) LookupAction(Action) → Handle(ctx, conn, hdr, Data) → 进入既有业务函数
 
-### 接口草案（拟在 kit 内提供）
-- `type ActionKind uint8`
-- `type ActionHandler func(ctx context.Context, conn core.IConnection, hdr core.IHeader, data json.RawMessage)`
-- `func NewAction(name string, h ActionHandler, opts ...ActionOption) core.SubProcessAction`
-- `func KindFromName(name string) ActionKind`
-- （可选）`func (a *Action) Kind() ActionKind`（用于调试/可观测，不参与路由语义）
+### 接口草案（本次不新增对外接口）
+- 保持现有 `registerActions(h) []core.SubProcessAction`（或拆分为 `registerXxxActions(h)`）返回 action 列表，统一由 `initActions()` 注册。
 
 ### 错误与安全
-- 模板层不吞/不替换业务错误；业务仍通过现有 `respData/varResp` 的 `code/msg` 表达。
-- `RequireAuth()` 值保持原有定义，不改变 source mismatch 等安全语义。
+- 不改变鉴权：`RequireAuth()` 默认 `false`；若未来某 action 需鉴权，使用 `kit.WithRequireAuth(true)` 显式声明（本 PR 不引入）。
+- 不改变错误码/返回内容：仍由原业务函数构造并发送。
 
 ### 性能与测试策略
-- kind 推导仅在注册期（Init）执行；运行期不增加额外判断。
-- 覆盖：复用现有 `tests/auth_handler_test.go`、`tests/varstore_handler_test.go`、集成测试，降低“漏注册”风险。
+- `kit.NewAction` 只在初始化期构造闭包对象；`OnReceive` 仍为一次查表 + 一次函数调用。
+- 使用既有测试覆盖“漏注册/行为回退”风险，并补充必要的冒烟测试命令。
 
 ### 可扩展性设计点
-- 其它子协议（file/flow/exec/topicbus）后续可逐步迁移到同一模板（不要求本 PR 一次完成）。
-- kind 后续可用于统一日志/metrics/调试输出，但必须另起 PR（避免本 PR 引入语义漂移）。
+- 未来可在不改 wire 的前提下，为 action 增加统一的可观测/统计（必须另起 PR，避免语义漂移）。
+
+## 问题清单
+- 阻塞：否
 
 ---
 
-## 3.1) 计划拆分（Checklist）
+## 3.1) 计划拆分（形成文档）
 
-## 问题清单（阻塞：否）
-- 已确认：方案 A、wire 不改、仅改 Server、优先 auth+varstore、不做兼容开关、验收命令与冒烟方式。
+> 说明：每个任务都必须做到“可审计、可回滚、可验证”。未确认本计划前禁止进入 3.2 写代码。
 
-### DOC1 - 更新全局文档（先做）
-- 目标：`d:\project\MyFlowHub3\target.md` 与 `d:\project\MyFlowHub3\repos.md` 反映当前真实状态，并补充 PR2-3 细节与验收。
+### Checklist
+
+#### ACT1 - exec：迁移 action 注册到 kit.NewAction
+- 目标：移除 `execAction` wrapper，注册处直接绑定 `actionCall/actionCallResp` → handler 方法。
 - 涉及文件：
-  - `d:\project\MyFlowHub3\target.md`
-  - `d:\project\MyFlowHub3\repos.md`
+  - `subproto/exec/actions.go`
 - 验收条件：
-  - PR2-5/semver 等状态不再写“未来/待合并”，改为已完成。
-  - PR2-3 有明确：范围/不做/验收/风险/回滚。
-- 测试点：无。
-- 回滚点：手工恢复文件历史内容（建议先本地备份）。
-
-### KIT1 - kit：新增 action 模板与 kind
-- 目标：提供统一 `NewAction` + `ActionKind` + `KindFromName`（支持显式覆盖 kind）。
-- 涉及文件：
-  - `subproto/kit/kit.go`（如需，仅追加；不改变现有函数语义）
-  - `subproto/kit/action.go`（新增）
-- 验收条件：
-  - `go test` 编译通过。
-  - kind 推导仅在注册期执行（不进入热路径）。
-- 测试点（可选其一）：
-  - 新增轻量单测覆盖 kind 推导（推荐）。
-- 回滚点：revert 该提交。
-
-### AUTH1 - auth：迁移 assist/up 注册到 kit 模板
-- 目标：不改业务逻辑，仅收敛 action 注册样板（assist_* / up_* 及对应 resp）。
-- 涉及文件（预期）：
-  - `subproto/auth/actions_register.go`
-  - `subproto/auth/actions_login.go`
-  - `subproto/auth/actions_up_login.go`
-  - `subproto/auth/actions_up_login_register.go`（可能合并/删除）
-  - 其它 auth actions：按“可读性优先”决定是否一起迁移（不强制）。
-- 验收条件：
-  - 所有 action 仍被 `initActions()` 注册（无漏项）。
-  - `go test ./...` 通过（含 auth 相关测试）。
+  - `registerActions()` 返回的 action 列表与迁移前一致（2 个 action，名称不变）。
 - 测试点：
-  - `tests/auth_handler_test.go`
-- 回滚点：revert 该提交。
+  - 走 `TEST1/SMOKE1` 覆盖。
+- 回滚点：
+  - revert 本任务提交。
 
-### VSTORE1 - varstore：迁移 assist/up/notify 注册到 kit 模板
-- 目标：移除 `varAction` wrapper，用 `kit.NewAction(...)` 显式注册（含 `var_changed/var_deleted`）。
+#### ACT2 - flow：迁移 action 注册到 kit.NewAction
+- 目标：移除 `flowAction` wrapper；`set/run/status/list/get` 绑定到既有 handler 方法。
 - 涉及文件：
-  - `subproto/varstore/actions.go`
+  - `subproto/flow/actions.go`
 - 验收条件：
-  - `go test ./...` 通过（含 varstore 相关测试/集成）。
+  - action 名称与数量与迁移前一致。
 - 测试点：
-  - `tests/varstore_handler_test.go`
-  - `tests/integration_varstore_end_to_end_test.go`
-- 回滚点：revert 该提交。
+  - 走 `TEST1/SMOKE1` 覆盖。
+- 回滚点：
+  - revert 本任务提交。
 
-### TEST1 - 回归测试（GOWORK=off）
-- 命令：
+#### ACT3 - topicbus：迁移 action 注册到 kit.NewAction
+- 目标：移除 `topicAction` wrapper；订阅/退订/列表/发布等绑定到既有 handler 方法。
+- 涉及文件：
+  - `subproto/topicbus/actions.go`
+- 验收条件：
+  - action 名称与数量与迁移前一致。
+- 测试点：
+  - 走 `TEST1/SMOKE1` 覆盖。
+- 回滚点：
+  - revert 本任务提交。
+
+#### ACT4 - management：迁移 action 注册到 kit.NewAction（方案 A：保留拆分文件）
+- 目标：
+  - 用 `kit.NewAction(...)` 闭包替换结构体 action（`node_echo`、`list_nodes`、`list_subtree`、`config_get`、`config_set`、`config_list`）。
+  - `initActions()` 改为统一注册 action 列表（与其他子协议一致），不再显式 new struct action。
+- 涉及文件：
+  - `subproto/management/management.go`
+  - `subproto/management/action_echo.go`
+  - `subproto/management/action_nodes.go`
+  - `subproto/management/action_config.go`
+  - （如需要）`subproto/management/actions.go`（仅做聚合注册，不承载业务逻辑）
+- 验收条件：
+  - 以上 action 全部可被 Lookup；行为保持不变（响应 code/msg/字段一致）。
+- 测试点：
+  - 走 `TEST1/SMOKE1` 覆盖。
+- 回滚点：
+  - revert 本任务提交。
+
+#### TEST1 - 回归测试（强制：GOWORK=off）
+- 命令（在本 worktree 根目录执行）：
   - `$env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'`
   - `New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null`
   - `$env:GOWORK='off'`
   - `go test ./... -count=1 -p 1`
 - 验收条件：全部通过。
+- 回滚点：revert 相关提交，或回退到通过测试的节点。
 
-### SMOKE1 - 冒烟步骤（hub_server + node_echo）
-- 目标：提供可执行步骤（写入 `docs/change`），用于人工验证最小链路。
-- 建议步骤（可二选一，优先 1 便于自动化）：
-  1) 跑自建 root+hub 的集成测试：`go test ./tests -run TestRootHubPing -count=1`
-  2) 手动启动 `cmd/hub_server`，再用最小 client 发送 management `node_echo`（如后续补充脚本）。
-- 验收条件：收到 `node_echo_resp` 且 `code=1`、`echo=ping`。
+#### SMOKE1 - 冒烟验证（强制）
+- 命令（在本 worktree 根目录执行）：
+  - `$env:GOWORK='off'`
+  - `go test ./tests -run TestRootHubPing -count=1`
+- 验收条件：通过。
+- 回滚点：同 `TEST1`。
 
-### CR1 - Code Review（阶段 3.3）
-- 逐项审查：需求覆盖/架构/性能/可读性/可扩展性/稳定性与安全/测试覆盖。
+#### CR1 - Code Review（阶段 3.3）
+- 逐项结论（通过/不通过）：
+  - 需求覆盖、架构合理性、性能风险、可读性与一致性、可扩展性、稳定性与安全、测试覆盖。
 
-### ARCH1 - 归档（阶段 4）
-- 新增：`docs/change/YYYY-MM-DD_assist-up-notify-action-template.md`
-- 内容必须包含：背景、具体变更、任务映射（DOC1/KIT1/AUTH1/VSTORE1/TEST1/SMOKE1）、关键决策与权衡、验证方式与结果、影响与回滚方案。
-- 验收条件：文档可独立复现。
+#### ARCH1 - 归档变更（阶段 4）
+- 新增文档：
+  - `docs/change/2026-02-18_server-action-kit-coverage.md`
+- 必须包含：
+  - 变更背景/目标
+  - 具体变更（按 ACT1~ACT4 列出）
+  - 关键设计决策与权衡（强调 wire/语义不变）
+  - 测试与验证方式/结果（TEST1/SMOKE1 输出要点）
+  - 潜在影响与回滚方案
 
-### SRVSEM4 - Code Review（阶段 3.3）+ 归档（阶段 4）
-- 验收条件：Review 结论为“通过”。
+## 问题清单（阻塞：是）
+- 请你确认：本 `plan.md` 是否可以作为本 worktree 的执行计划？确认后我进入 3.2 开始改代码。
 
-### SRVSEM5 - 合并（你确认结束 workflow 后执行）
-- 目标：合并到 `main` 并 push。
-- 步骤（在 `repo/MyFlowHub-Server` 执行）：
-  1) `git merge --ff-only origin/chore/server-semver-deps`
-  2) `git push origin main`
-- 回滚点：
-  - revert 合并提交（或 revert 分支提交）。
