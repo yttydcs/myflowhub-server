@@ -37,7 +37,9 @@ func TestFileReadRespMajorOKRespOnInvalidRead(t *testing.T) {
 		WithMajor(header.MajorCmd).
 		WithSubProto(serverfile.SubProtoFile).
 		WithSourceID(5).
-		WithTargetID(1)
+		WithTargetID(1).
+		WithMsgID(123).
+		WithTraceID(456)
 
 	h.OnReceive(ctx, requester, hdr, payload)
 
@@ -46,6 +48,12 @@ func TestFileReadRespMajorOKRespOnInvalidRead(t *testing.T) {
 	}
 	if srv.sends[0].major != header.MajorOKResp {
 		t.Fatalf("expected read_resp major=%d, got %d", header.MajorOKResp, srv.sends[0].major)
+	}
+	if srv.sends[0].msgID != 123 {
+		t.Fatalf("expected msg_id=123, got %d", srv.sends[0].msgID)
+	}
+	if srv.sends[0].traceID != 456 {
+		t.Fatalf("expected trace_id=456, got %d", srv.sends[0].traceID)
 	}
 }
 
@@ -74,7 +82,9 @@ func TestFileWriteRespMajorOKRespOnInvalidWrite(t *testing.T) {
 		WithMajor(header.MajorCmd).
 		WithSubProto(serverfile.SubProtoFile).
 		WithSourceID(5).
-		WithTargetID(1)
+		WithTargetID(1).
+		WithMsgID(321).
+		WithTraceID(654)
 
 	h.OnReceive(ctx, requester, hdr, payload)
 
@@ -84,5 +94,10 @@ func TestFileWriteRespMajorOKRespOnInvalidWrite(t *testing.T) {
 	if srv.sends[0].major != header.MajorOKResp {
 		t.Fatalf("expected write_resp major=%d, got %d", header.MajorOKResp, srv.sends[0].major)
 	}
+	if srv.sends[0].msgID != 321 {
+		t.Fatalf("expected msg_id=321, got %d", srv.sends[0].msgID)
+	}
+	if srv.sends[0].traceID != 654 {
+		t.Fatalf("expected trace_id=654, got %d", srv.sends[0].traceID)
+	}
 }
-

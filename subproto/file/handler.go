@@ -103,14 +103,14 @@ func (h *Handler) handleCtrl(ctx context.Context, conn core.IConnection, hdr cor
 	case actionRead:
 		var req readReq
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			h.sendReadResp(ctx, hdr.SourceID(), readResp{Code: 400, Msg: "invalid read", Op: strings.TrimSpace(req.Op)})
+			h.sendReadResp(ctx, hdr, hdr.SourceID(), readResp{Code: 400, Msg: "invalid read", Op: strings.TrimSpace(req.Op)})
 			return
 		}
 		h.handleReadRequest(ctx, conn, hdr, payload, req)
 	case actionWrite:
 		var req writeReq
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			h.sendWriteResp(ctx, hdr.SourceID(), writeResp{Code: 400, Msg: "invalid write", Op: strings.TrimSpace(req.Op)})
+			h.sendWriteResp(ctx, hdr, hdr.SourceID(), writeResp{Code: 400, Msg: "invalid write", Op: strings.TrimSpace(req.Op)})
 			return
 		}
 		h.handleWriteRequest(ctx, conn, hdr, payload, req)
@@ -147,7 +147,7 @@ func (h *Handler) handleReadRequest(ctx context.Context, conn core.IConnection, 
 	case opPull:
 		target = req.Target
 		if target == 0 {
-			h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "target required", Op: opPull})
+			h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "target required", Op: opPull})
 			return
 		}
 	case opList:
@@ -158,17 +158,17 @@ func (h *Handler) handleReadRequest(ctx context.Context, conn core.IConnection, 
 	case opReadText:
 		target = req.Target
 		if target == 0 {
-			h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "target required", Op: opReadText})
+			h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "target required", Op: opReadText})
 			return
 		}
 	default:
-		h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "invalid op", Op: op})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "invalid op", Op: op})
 		return
 	}
 
 	h.routeCtrlRequest(ctx, conn, hdr, payload, requester, permRead, target,
 		func(code int, msg string) {
-			h.sendReadResp(ctx, requester, readResp{Code: code, Msg: msg, Op: op})
+			h.sendReadResp(ctx, hdr, requester, readResp{Code: code, Msg: msg, Op: op})
 		},
 		func(cfg handlerConfig) {
 			switch op {
@@ -187,17 +187,17 @@ func (h *Handler) handleWriteRequest(ctx context.Context, conn core.IConnection,
 	op := strings.ToLower(strings.TrimSpace(req.Op))
 	requester := hdr.SourceID()
 	if op != opOffer {
-		h.sendWriteResp(ctx, requester, writeResp{Code: 400, Msg: "invalid op", Op: op})
+		h.sendWriteResp(ctx, hdr, requester, writeResp{Code: 400, Msg: "invalid op", Op: op})
 		return
 	}
 	if req.Target == 0 {
-		h.sendWriteResp(ctx, requester, writeResp{Code: 400, Msg: "target required", Op: opOffer})
+		h.sendWriteResp(ctx, hdr, requester, writeResp{Code: 400, Msg: "target required", Op: opOffer})
 		return
 	}
 
 	h.routeCtrlRequest(ctx, conn, hdr, payload, requester, permWrite, req.Target,
 		func(code int, msg string) {
-			h.sendWriteResp(ctx, requester, writeResp{Code: code, Msg: msg, Op: opOffer, SessionID: strings.TrimSpace(req.SessionID)})
+			h.sendWriteResp(ctx, hdr, requester, writeResp{Code: code, Msg: msg, Op: opOffer, SessionID: strings.TrimSpace(req.SessionID)})
 		},
 		func(cfg handlerConfig) {
 			h.handleOfferAsConsumer(ctx, hdr, req, cfg)
@@ -358,17 +358,17 @@ func (h *Handler) sendToConn(ctx context.Context, conn core.IConnection, hdr cor
 	_ = srv.Send(ctx, conn.ID(), hdr, payload)
 }
 
-func (h *Handler) sendReadResp(ctx context.Context, target uint32, data readResp) {
+func (h *Handler) sendReadResp(ctx context.Context, reqHdr core.IHeader, target uint32, data readResp) {
 	data.Op = strings.ToLower(strings.TrimSpace(data.Op))
-	h.sendCtrlToNode(ctx, target, message{Action: actionReadResp, Data: mustJSON(data)})
+	h.sendCtrlToNode(ctx, reqHdr, target, message{Action: actionReadResp, Data: mustJSON(data)})
 }
 
-func (h *Handler) sendWriteResp(ctx context.Context, target uint32, data writeResp) {
+func (h *Handler) sendWriteResp(ctx context.Context, reqHdr core.IHeader, target uint32, data writeResp) {
 	data.Op = strings.ToLower(strings.TrimSpace(data.Op))
-	h.sendCtrlToNode(ctx, target, message{Action: actionWriteResp, Data: mustJSON(data)})
+	h.sendCtrlToNode(ctx, reqHdr, target, message{Action: actionWriteResp, Data: mustJSON(data)})
 }
 
-func (h *Handler) sendCtrlToNode(ctx context.Context, target uint32, msg message) {
+func (h *Handler) sendCtrlToNode(ctx context.Context, reqHdr core.IHeader, target uint32, msg message) {
 	if target == 0 {
 		return
 	}
@@ -387,6 +387,9 @@ func (h *Handler) sendCtrlToNode(ctx context.Context, target uint32, msg message
 		WithSubProto(SubProtoFile).
 		WithSourceID(src).
 		WithTargetID(target)
+	if reqHdr != nil {
+		hdr = hdr.WithMsgID(reqHdr.GetMsgID()).WithTraceID(reqHdr.GetTraceID())
+	}
 
 	// 逐跳选择下一跳连接：先命中子树，否则上送父节点
 	var next core.IConnection
@@ -470,13 +473,13 @@ func (h *Handler) handleListLocal(ctx context.Context, hdr core.IHeader, req rea
 	}
 	dir, err := sanitizeDir(req.Dir)
 	if err != nil {
-		h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "invalid dir", Op: opList, Dir: req.Dir})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "invalid dir", Op: opList, Dir: req.Dir})
 		return
 	}
 	root := filepath.Join(cfg.BaseDir, filepath.FromSlash(dir))
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		h.sendReadResp(ctx, requester, readResp{Code: 404, Msg: "not found", Op: opList, Dir: dir, Files: []string{}, Dirs: []string{}})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 404, Msg: "not found", Op: opList, Dir: dir, Files: []string{}, Dirs: []string{}})
 		return
 	}
 	dirs := make([]string, 0, len(entries))
@@ -493,7 +496,7 @@ func (h *Handler) handleListLocal(ctx context.Context, hdr core.IHeader, req rea
 	}
 	sort.Strings(dirs)
 	sort.Strings(files)
-	h.sendReadResp(ctx, requester, readResp{Code: 1, Msg: "ok", Op: opList, Dir: dir, Files: files, Dirs: dirs})
+	h.sendReadResp(ctx, hdr, requester, readResp{Code: 1, Msg: "ok", Op: opList, Dir: dir, Files: files, Dirs: dirs})
 }
 
 func (h *Handler) handleReadTextLocal(ctx context.Context, hdr core.IHeader, req readReq, cfg handlerConfig) {
@@ -505,23 +508,23 @@ func (h *Handler) handleReadTextLocal(ctx context.Context, hdr core.IHeader, req
 	requester := hdr.SourceID()
 	provider := local
 	if req.Target != 0 && req.Target != local {
-		h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "target mismatch", Op: opReadText})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "target mismatch", Op: opReadText})
 		return
 	}
 	dir := strings.TrimSpace(req.Dir)
 	name := strings.TrimSpace(req.Name)
 	finalPath, _, err := resolvePaths(cfg.BaseDir, dir, name)
 	if err != nil {
-		h.sendReadResp(ctx, requester, readResp{Code: 400, Msg: "invalid path", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 400, Msg: "invalid path", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
 		return
 	}
 	info, err := os.Stat(finalPath)
 	if err != nil || info == nil || info.IsDir() {
-		h.sendReadResp(ctx, requester, readResp{Code: 404, Msg: "not found", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 404, Msg: "not found", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
 		return
 	}
 	if cfg.MaxSizeBytes > 0 && uint64(info.Size()) > cfg.MaxSizeBytes {
-		h.sendReadResp(ctx, requester, readResp{Code: 413, Msg: "too large", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name, Size: uint64(info.Size())})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 413, Msg: "too large", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name, Size: uint64(info.Size())})
 		return
 	}
 
@@ -535,7 +538,7 @@ func (h *Handler) handleReadTextLocal(ctx context.Context, hdr core.IHeader, req
 
 	f, err := os.Open(finalPath)
 	if err != nil {
-		h.sendReadResp(ctx, requester, readResp{Code: 500, Msg: "open failed", Op: opReadText})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 500, Msg: "open failed", Op: opReadText})
 		return
 	}
 	defer func() { _ = f.Close() }()
@@ -545,16 +548,16 @@ func (h *Handler) handleReadTextLocal(ctx context.Context, hdr core.IHeader, req
 	if rerr == io.ErrUnexpectedEOF || rerr == io.EOF {
 		// ok
 	} else if rerr != nil {
-		h.sendReadResp(ctx, requester, readResp{Code: 500, Msg: "read failed", Op: opReadText})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 500, Msg: "read failed", Op: opReadText})
 		return
 	}
 	buf = buf[:n]
 	truncated := uint64(n) < uint64(info.Size())
 	if !utf8.Valid(buf) {
-		h.sendReadResp(ctx, requester, readResp{Code: 415, Msg: "not text", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
+		h.sendReadResp(ctx, hdr, requester, readResp{Code: 415, Msg: "not text", Op: opReadText, Provider: provider, Consumer: requester, Dir: dir, Name: name})
 		return
 	}
-	h.sendReadResp(ctx, requester, readResp{
+	h.sendReadResp(ctx, hdr, requester, readResp{
 		Code:      1,
 		Msg:       "ok",
 		Op:        opReadText,
@@ -581,21 +584,21 @@ func (h *Handler) handlePullAsProvider(ctx context.Context, hdr core.IHeader, re
 
 	finalPath, _, err := resolvePaths(cfg.BaseDir, req.Dir, req.Name)
 	if err != nil {
-		h.sendReadResp(ctx, consumer, readResp{Code: 400, Msg: "invalid path", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name})
+		h.sendReadResp(ctx, hdr, consumer, readResp{Code: 400, Msg: "invalid path", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name})
 		return
 	}
 	info, err := os.Stat(finalPath)
 	if err != nil || info.IsDir() {
-		h.sendReadResp(ctx, consumer, readResp{Code: 404, Msg: "not found", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name})
+		h.sendReadResp(ctx, hdr, consumer, readResp{Code: 404, Msg: "not found", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name})
 		return
 	}
 	size := uint64(info.Size())
 	if cfg.MaxSizeBytes > 0 && size > cfg.MaxSizeBytes {
-		h.sendReadResp(ctx, consumer, readResp{Code: 413, Msg: "too large", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name, Size: size})
+		h.sendReadResp(ctx, hdr, consumer, readResp{Code: 413, Msg: "too large", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name, Size: size})
 		return
 	}
 	if h.totalSessions() >= cfg.MaxConcurrent {
-		h.sendReadResp(ctx, consumer, readResp{Code: 429, Msg: "too many sessions", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name, Size: size})
+		h.sendReadResp(ctx, hdr, consumer, readResp{Code: 429, Msg: "too many sessions", Op: opPull, Provider: provider, Consumer: consumer, Dir: req.Dir, Name: req.Name, Size: size})
 		return
 	}
 
@@ -605,7 +608,7 @@ func (h *Handler) handlePullAsProvider(ctx context.Context, hdr core.IHeader, re
 	}
 	sid, err := newUUID()
 	if err != nil {
-		h.sendReadResp(ctx, consumer, readResp{Code: 500, Msg: "uuid failed", Op: opPull})
+		h.sendReadResp(ctx, hdr, consumer, readResp{Code: 500, Msg: "uuid failed", Op: opPull})
 		return
 	}
 
@@ -622,7 +625,7 @@ func (h *Handler) handlePullAsProvider(ctx context.Context, hdr core.IHeader, re
 		StartFrom: startFrom,
 		Chunk:     uint32(cfg.ChunkBytes),
 	}
-	h.sendReadResp(ctx, consumer, resp)
+	h.sendReadResp(ctx, hdr, consumer, resp)
 
 	// 发送端会话：异步发送 DATA
 	if startFrom >= size {
@@ -745,16 +748,16 @@ func (h *Handler) handleOfferAsConsumer(ctx context.Context, hdr core.IHeader, r
 	}
 	consumer := local
 	if req.Target != 0 && req.Target != local {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 400, Msg: "target mismatch", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID)})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 400, Msg: "target mismatch", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID)})
 		return
 	}
 	if cfg.MaxSizeBytes > 0 && req.Size > cfg.MaxSizeBytes {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 413, Msg: "too large", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 413, Msg: "too large", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 	sid, ok := parseUUID(req.SessionID)
 	if !ok {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 400, Msg: "invalid session", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 400, Msg: "invalid session", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 
@@ -764,22 +767,22 @@ func (h *Handler) handleOfferAsConsumer(ctx context.Context, hdr core.IHeader, r
 	}
 	finalPath, partPath, err := resolvePaths(cfg.BaseDir, req.Dir, req.Name)
 	if err != nil {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 400, Msg: "invalid path", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 400, Msg: "invalid path", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0o755); err != nil {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 500, Msg: "mkdir failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 500, Msg: "mkdir failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 	if !overwrite {
 		if _, err := os.Stat(finalPath); err == nil {
-			h.sendWriteResp(ctx, provider, writeResp{Code: 409, Msg: "exists", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+			h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 409, Msg: "exists", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 			return
 		}
 	}
 
 	if h.totalSessions() >= cfg.MaxConcurrent {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 429, Msg: "too many sessions", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 429, Msg: "too many sessions", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 
@@ -800,7 +803,7 @@ func (h *Handler) handleOfferAsConsumer(ctx context.Context, hdr core.IHeader, r
 		} else {
 			_ = os.Remove(partPath)
 		}
-		h.sendWriteResp(ctx, provider, writeResp{
+		h.sendWriteResp(ctx, hdr, provider, writeResp{
 			Code:       1,
 			Msg:        "ok",
 			Op:         opOffer,
@@ -819,17 +822,17 @@ func (h *Handler) handleOfferAsConsumer(ctx context.Context, hdr core.IHeader, r
 
 	f, err := os.OpenFile(partPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		h.sendWriteResp(ctx, provider, writeResp{Code: 500, Msg: "open failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 500, Msg: "open failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 	if err := f.Truncate(int64(resumeFrom)); err != nil {
 		_ = f.Close()
-		h.sendWriteResp(ctx, provider, writeResp{Code: 500, Msg: "truncate failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 500, Msg: "truncate failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 	if _, err := f.Seek(int64(resumeFrom), io.SeekStart); err != nil {
 		_ = f.Close()
-		h.sendWriteResp(ctx, provider, writeResp{Code: 500, Msg: "seek failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
+		h.sendWriteResp(ctx, hdr, provider, writeResp{Code: 500, Msg: "seek failed", Op: opOffer, SessionID: strings.TrimSpace(req.SessionID), Accept: false})
 		return
 	}
 
@@ -851,7 +854,7 @@ func (h *Handler) handleOfferAsConsumer(ctx context.Context, hdr core.IHeader, r
 		lastActive:      time.Now(),
 	})
 
-	h.sendWriteResp(ctx, provider, writeResp{
+	h.sendWriteResp(ctx, hdr, provider, writeResp{
 		Code:       1,
 		Msg:        "ok",
 		Op:         opOffer,
