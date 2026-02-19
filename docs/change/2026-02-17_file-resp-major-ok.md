@@ -20,7 +20,7 @@ Worktree：`d:\project\MyFlowHub3\worktrees\file-resp-major-okresp`
   - 补齐 Major 约定：请求（CTRL `read/write`）为 `MajorCmd`；响应（CTRL `read_resp/write_resp`）为 `MajorOKResp`；`DATA/ACK` 为 `MajorMsg`；失败响应仍使用 `MajorOKResp`（错误在 payload `code/msg`）。
 - `plan.md`
   - 本 workflow 的需求/架构/拆分计划（便于审计与接手）。
-- `plan_archive_2026-02-16_exec-flow-resp-major-ok.md`
+- `docs/plan_archive/plan_archive_2026-02-16_exec-flow-resp-major-ok.md`
   - 归档上一轮计划（避免覆盖历史）。
 
 ### 新增

@@ -11,7 +11,7 @@
 ## 具体变更内容
 ### 新增
 - `subproto/varstore/*`：承载 VarStore 子协议实现（由原目录迁移而来）
-- `plan_archive_2026-02-15_default-forward-subproto-forward.md`：归档旧 workflow 的计划文档，确保可审计
+- `docs/plan_archive/plan_archive_2026-02-15_default-forward-subproto-forward.md`：归档旧 workflow 的计划文档，确保可审计
 
 ### 修改
 - `modules/hub.go`：默认模块集合改用 `subproto/varstore`
