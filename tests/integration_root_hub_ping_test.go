@@ -15,9 +15,9 @@ import (
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
+	"github.com/yttydcs/myflowhub-subproto/management"
 	auth "github.com/yttydcs/myflowhub-server/subproto/auth"
 	"github.com/yttydcs/myflowhub-server/subproto/forward"
-	"github.com/yttydcs/myflowhub-server/subproto/management"
 	vartstore "github.com/yttydcs/myflowhub-server/subproto/varstore"
 )
 
