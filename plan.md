@@ -1,9 +1,9 @@
-# Plan - Server：action 注册模板化补齐（exec/flow/topicbus/management → kit.NewAction）
+# Plan - Server：切换到 MyFlowHub-Core/subproto/kit（依赖 core@v0.2.1）（PR1）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`refactor/server-action-kit`
-- Worktree：`d:\project\MyFlowHub3\worktrees\server-action-kit\MyFlowHub-Server`
+- 分支：`refactor/subproto-kit-core`
+- Worktree：`d:\project\MyFlowHub3\worktrees\pr1-kit-core\MyFlowHub-Server`
 - Base：`origin/main`
 - 参考：
   - `d:\project\MyFlowHub3\target.md`
@@ -11,196 +11,88 @@
   - `d:\project\MyFlowHub3\guide.md`（commit 信息中文）
 
 ## 约束（边界）
-- 仅改 `MyFlowHub-Server`；不改 Core/Proto/SDK/Win。
 - wire 不改：SubProto 值 / Action 字符串 / JSON payload struct / HeaderTcp 语义均保持不变。
-- 仅做“注册方式/样板代码”收敛：从 `subproto.BaseAction` 包装类型/结构体，迁移到 `subproto/kit.NewAction(...)`。
-- Management 采用 **方案 A**：保留现有文件拆分（`action_*.go`），不合并成一个巨大的 `actions.go`。
+- 本 PR 仅做“工具包归属调整”：
+  - `MyFlowHub-Server/subproto/kit` 删除；
+  - Server 内所有引用改为 `github.com/yttydcs/myflowhub-core/subproto/kit`。
 - 验收测试必须使用 `GOWORK=off`（避免本地 `go.work` 干扰审计）。
 
 ## 当前状态（事实，可审计）
-- `subproto/kit.NewAction(...)` 已存在并在部分子协议（如 `auth/varstore`）使用。
-- `subproto/exec`、`subproto/flow`、`subproto/topicbus` 仍使用“包装类型 + BaseAction”的注册样式（`actions.go`）。
-- `subproto/management` 仍使用“每个 action 一个结构体 + BaseAction”，并在 `management.go:initActions()` 显式 `RegisterAction(&xxxAction{h:h})`。
+- Server 当前存在 `subproto/kit` 包（action 模板 + response send helper）。
+- 多个子协议（`subproto/auth/varstore/exec/flow/topicbus/management/forward`）已依赖 `subproto/kit`。
+- 本次将依赖 Core 发布的新版本 `myflowhub-core@v0.2.1`（由 Core PR1 先完成并打 tag）。
 
 ---
 
-## 1) 需求分析
+## 目标
+1) Server 不再承载 `subproto/kit` 实现，改为依赖 Core 的 `subproto/kit`（保持行为不变）。
+2) 为后续“子协议实现拆成独立 Go module”（A2：单仓多 module）清理依赖边界：子协议实现不再被 Server 仓库绑定。
 
-### 目标
-1) 将 `exec/flow/topicbus/management` 的 action 注册方式统一为 `kit.NewAction(...)`，做到风格一致、减少样板。
-2) 不改变任何 wire/行为：名称、路由、转发、返回、鉴权语义保持不变。
-3) 让后续新增 action 的成本更低、可读性更强（注册处“名称 + handler 绑定”一眼可见）。
-
-### 范围（必须 / 可选 / 不做）
-- 必须：
-  - `subproto/exec/actions.go` 迁移到 `kit.NewAction`。
-  - `subproto/flow/actions.go` 迁移到 `kit.NewAction`。
-  - `subproto/topicbus/actions.go` 迁移到 `kit.NewAction`。
-  - `subproto/management/*`（`action_echo.go` / `action_nodes.go` / `action_config.go` / `management.go`）迁移到 `kit.NewAction`（方案 A：保留拆分文件）。
-- 可选（仅当阻塞测试/验收时才做）：
-  - 为缺失覆盖的边界补充极小单测（优先复用现有 tests）。
-- 不做：
-  - 修改 action 名称、消息结构、字段、SubProto 编号、HeaderTcp v2 规则。
-  - 调整 handler 的转发策略、鉴权策略、错误码语义。
-
-### 使用场景
-- 每个子协议 handler 在 `Init()` 内 `ResetActions()` 后注册 action map；收到帧后按 action 名称查表并调用 `Handle(...)`。
-
-### 功能需求
-- 每个原有 action 必须在 initActions 后可被查到（无漏注册）。
-- `RequireAuth()` 语义保持与原实现一致（本次涉及子协议当前均为 `false`）。
-
-### 非功能需求
-- 性能：仅改注册期代码，不引入 `OnReceive` 热路径的额外开销。
-- 可读性：减少“每个 action 一个结构体”的样板；保持各子协议内部结构清晰。
-- 可扩展性：未来新增 action 只需要新增 `kit.NewAction(name, handler)` 一行（或极少量辅助函数）。
-
-### 输入输出
-- 输入：action name（string）+ data（json.RawMessage）+ conn/hdr。
-- 输出：调用原有 handler 逻辑，产生与当前一致的响应/转发结果。
-
-### 边界异常
-- action name 为空：`kit.NewAction` 返回 `nil`（调用方不应注册 `nil`）。
-- action 重名：保持 `RegisterAction` 现有覆盖语义（不在本 PR 引入额外告警/强校验）。
-
-### 验收标准
-- 代码层面：上述 4 个子协议的 action 注册全部使用 `kit.NewAction`（不再出现 BaseAction wrapper/结构体 action 注册）。
-- 测试层面（必须）：
-  - `GOWORK=off go test ./... -count=1 -p 1`
-  - `GOWORK=off go test ./tests -run TestRootHubPing -count=1`
-
-### 风险
-- 漏注册 action 导致 runtime unknown action：通过回归测试 + 冒烟测试降低风险。
-- 迁移时误改业务逻辑：坚持只做“注册样式”变更，handler 业务函数不动。
-
-## 问题清单
-- 阻塞：否
+## 非目标
+- 不做任何 handler 行为重构；
+- 不做 broker/flow/exec 的进一步解耦（后续单独 workflow 处理）。
 
 ---
 
-## 2) 架构设计（分析）
+## 3.1) 计划拆分（Checklist）
 
-### 总体方案（采用）
-- 使用 `github.com/yttydcs/myflowhub-server/subproto/kit.NewAction(name, handler, opts...)` 替代当前的：
-  - `type xxxAction struct { subproto.BaseAction; name string; fn func(...) }`
-  - 或 `type xxxAction struct { subproto.BaseAction; h *Handler }` + `RegisterAction(&xxxAction{h:h})`
-- 迁移只影响“action 对象的构造方式”，不改变 handler 的调用链：
-  - `ResetActions()` → `RegisterAction(act)` → `LookupAction(name)` → `act.Handle(...)`
-
-### 模块职责
-- `subproto/kit`：提供 action 构造模板（函数式 action），减少样板；可选提供 kind（仅用于组织/可观测，不参与 wire）。
-- `subproto/*`：各子协议定义 action 常量、消息结构与业务 handler；仅在 `registerActions` 层绑定 action → handler。
-
-### 数据 / 调用流
-1) Handler.Init → initActions → ResetActions → RegisterAction(kit.NewAction(...))
-2) OnReceive 解包出 `Action` + `Data`
-3) LookupAction(Action) → Handle(ctx, conn, hdr, Data) → 进入既有业务函数
-
-### 接口草案（本次不新增对外接口）
-- 保持现有 `registerActions(h) []core.SubProcessAction`（或拆分为 `registerXxxActions(h)`）返回 action 列表，统一由 `initActions()` 注册。
-
-### 错误与安全
-- 不改变鉴权：`RequireAuth()` 默认 `false`；若未来某 action 需鉴权，使用 `kit.WithRequireAuth(true)` 显式声明（本 PR 不引入）。
-- 不改变错误码/返回内容：仍由原业务函数构造并发送。
-
-### 性能与测试策略
-- `kit.NewAction` 只在初始化期构造闭包对象；`OnReceive` 仍为一次查表 + 一次函数调用。
-- 使用既有测试覆盖“漏注册/行为回退”风险，并补充必要的冒烟测试命令。
-
-### 可扩展性设计点
-- 未来可在不改 wire 的前提下，为 action 增加统一的可观测/统计（必须另起 PR，避免语义漂移）。
-
-## 问题清单
-- 阻塞：否
-
----
-
-## 3.1) 计划拆分（形成文档）
-
-> 说明：每个任务都必须做到“可审计、可回滚、可验证”。未确认本计划前禁止进入 3.2 写代码。
-
-### Checklist
-
-#### ACT1 - exec：迁移 action 注册到 kit.NewAction
-- 目标：移除 `execAction` wrapper，注册处直接绑定 `actionCall/actionCallResp` → handler 方法。
+### SRVKIT0 - 归档旧 plan
+- 目标：避免覆盖上一轮 action-kit workflow 的 `plan.md`，保留可审计回放。
 - 涉及文件：
-  - `subproto/exec/actions.go`
-- 验收条件：
-  - `registerActions()` 返回的 action 列表与迁移前一致（2 个 action，名称不变）。
-- 测试点：
-  - 走 `TEST1/SMOKE1` 覆盖。
-- 回滚点：
-  - revert 本任务提交。
+  - `docs/plan_archive/plan_archive_2026-02-19_server-action-kit.md`
+- 验收条件：旧 plan 已归档且可阅读。
+- 回滚点：撤销本次 `git mv`。
 
-#### ACT2 - flow：迁移 action 注册到 kit.NewAction
-- 目标：移除 `flowAction` wrapper；`set/run/status/list/get` 绑定到既有 handler 方法。
+### SRVKIT1 - 切换 import 到 Core kit
+- 目标：全仓不再引用 `github.com/yttydcs/myflowhub-server/subproto/kit`。
+- 涉及模块/文件（预期）：
+  - `subproto/*`（所有 import `.../subproto/kit` 的文件）
+  - `modules/defaultset/hub.go`、`tests/*`（如有间接引用）
+- 验收条件：
+  - `rg \"myflowhub-server/subproto/kit\" ./` 无命中（允许 `docs/plan_archive` 与 `docs/change` 历史文本不参与验收）。
+  - `go test` 可通过（见 SRVKIT3）。
+- 回滚点：revert 提交。
+
+### SRVKIT2 - 删除 Server 内 `subproto/kit`
+- 目标：避免双实现与未来漂移风险。
 - 涉及文件：
-  - `subproto/flow/actions.go`
+  - `subproto/kit/*`（删除）
 - 验收条件：
-  - action 名称与数量与迁移前一致。
-- 测试点：
-  - 走 `TEST1/SMOKE1` 覆盖。
-- 回滚点：
-  - revert 本任务提交。
+  - Server 编译/测试通过；`subproto/kit` 目录不存在。
+- 回滚点：revert 提交。
 
-#### ACT3 - topicbus：迁移 action 注册到 kit.NewAction
-- 目标：移除 `topicAction` wrapper；订阅/退订/列表/发布等绑定到既有 handler 方法。
-- 涉及文件：
-  - `subproto/topicbus/actions.go`
-- 验收条件：
-  - action 名称与数量与迁移前一致。
-- 测试点：
-  - 走 `TEST1/SMOKE1` 覆盖。
-- 回滚点：
-  - revert 本任务提交。
+### SRVKIT3 - 回归验证（命令级）
+> 注意：本步骤依赖 Core 已发布 tag `v0.2.1`，否则 `GOWORK=off` 无法拉取新包路径。
+- 命令：
+```powershell
+$env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'
+New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null
+GOWORK=off go test ./... -count=1 -p 1
+```
+- 验收条件：命令通过。
+- 回滚点：revert 提交。
 
-#### ACT4 - management：迁移 action 注册到 kit.NewAction（方案 A：保留拆分文件）
-- 目标：
-  - 用 `kit.NewAction(...)` 闭包替换结构体 action（`node_echo`、`list_nodes`、`list_subtree`、`config_get`、`config_set`、`config_list`）。
-  - `initActions()` 改为统一注册 action 列表（与其他子协议一致），不再显式 new struct action。
-- 涉及文件：
-  - `subproto/management/management.go`
-  - `subproto/management/action_echo.go`
-  - `subproto/management/action_nodes.go`
-  - `subproto/management/action_config.go`
-  - （如需要）`subproto/management/actions.go`（仅做聚合注册，不承载业务逻辑）
-- 验收条件：
-  - 以上 action 全部可被 Lookup；行为保持不变（响应 code/msg/字段一致）。
-- 测试点：
-  - 走 `TEST1/SMOKE1` 覆盖。
-- 回滚点：
-  - revert 本任务提交。
+### SRVKIT4 - Code Review（阶段 3.3）
+- 按 3.3 清单输出结论（通过/不通过）；不通过则回到 SRVKIT1/2 修正。
 
-#### TEST1 - 回归测试（强制：GOWORK=off）
-- 命令（在本 worktree 根目录执行）：
-  - `$env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'`
-  - `New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null`
-  - `$env:GOWORK='off'`
-  - `go test ./... -count=1 -p 1`
-- 验收条件：全部通过。
-- 回滚点：revert 相关提交，或回退到通过测试的节点。
-
-#### SMOKE1 - 冒烟验证（强制）
-- 命令（在本 worktree 根目录执行）：
-  - `$env:GOWORK='off'`
-  - `go test ./tests -run TestRootHubPing -count=1`
-- 验收条件：通过。
-- 回滚点：同 `TEST1`。
-
-#### CR1 - Code Review（阶段 3.3）
-- 逐项结论（通过/不通过）：
-  - 需求覆盖、架构合理性、性能风险、可读性与一致性、可扩展性、稳定性与安全、测试覆盖。
-
-#### ARCH1 - 归档变更（阶段 4）
+### SRVKIT5 - 归档变更（阶段 4）
 - 新增文档：
-  - `docs/change/2026-02-18_server-action-kit-coverage.md`
-- 必须包含：
-  - 变更背景/目标
-  - 具体变更（按 ACT1~ACT4 列出）
-  - 关键设计决策与权衡（强调 wire/语义不变）
-  - 测试与验证方式/结果（TEST1/SMOKE1 输出要点）
-  - 潜在影响与回滚方案
+  - `docs/change/2026-02-19_server-use-core-kit.md`
+- 需包含：
+  - 背景/目标、变更范围（仅归属调整）、对外影响（依赖 core@v0.2.1）、验证方式/结果、回滚方案。
 
-## 问题清单（阻塞：是）
-- 请你确认：本 `plan.md` 是否可以作为本 worktree 的执行计划？确认后我进入 3.2 开始改代码。
+### SRVKIT6 - 合并与 push（需你确认 workflow 结束后执行）
+- 在 `repo/MyFlowHub-Server` 执行：
+  1) `git merge --ff-only origin/refactor/subproto-kit-core`
+  2) `git push origin main`
+
+---
+
+## 依赖关系 / 风险 / 注意事项
+- 依赖：
+  - 必须先完成 Core PR1（发布并 push tag `myflowhub-core@v0.2.1`），否则本仓库无法用 `GOWORK=off` 通过验收。
+- 风险：
+  - 若遗漏某处 import，将导致 “同时存在旧包路径/新包路径” 或编译失败；需用 `rg` 全量检查。
+- 注意：
+  - commit 信息使用中文（允许 `refactor:`/`docs:` 等英文前缀）。
 
