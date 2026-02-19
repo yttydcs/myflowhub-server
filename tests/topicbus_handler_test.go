@@ -8,7 +8,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/subproto/topicbus"
+	"github.com/yttydcs/myflowhub-subproto/topicbus"
 )
 
 func TestTopicBusSubscribeListUnsubscribe(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	topicbushandler "github.com/yttydcs/myflowhub-server/subproto/topicbus"
+	topicbushandler "github.com/yttydcs/myflowhub-subproto/topicbus"
 )
 
 func newTopicBusHandler(cfg core.IConfig, log *slog.Logger) core.ISubProcess {
