@@ -6,7 +6,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 func registerRevokeActions(h *LoginHandler) []core.SubProcessAction {

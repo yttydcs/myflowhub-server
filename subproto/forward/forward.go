@@ -8,7 +8,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 // DefaultForwardHandler 丢弃未知子协议，或按配置转发到指定节点；若未配置则默认尝试转发给父节点。

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 func (h *LoginHandler) handleLoginResp(ctx context.Context, data json.RawMessage) {

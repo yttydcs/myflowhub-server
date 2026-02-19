@@ -7,7 +7,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 func registerConfigGetActions(h *ManagementHandler) core.SubProcessAction {

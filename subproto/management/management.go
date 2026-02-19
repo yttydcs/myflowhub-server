@@ -9,7 +9,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/subproto"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 type ManagementHandler struct {

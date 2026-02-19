@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-server/subproto/kit"
+	"github.com/yttydcs/myflowhub-core/subproto/kit"
 )
 
 func registerEchoActions(h *ManagementHandler) core.SubProcessAction {
