@@ -9,7 +9,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	protocolfile "github.com/yttydcs/myflowhub-proto/protocol/file"
-	serverfile "github.com/yttydcs/myflowhub-server/subproto/file"
+	serverfile "github.com/yttydcs/myflowhub-subproto/file"
 )
 
 func TestFileReadRespMajorOKRespOnInvalidRead(t *testing.T) {

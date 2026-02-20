@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	authhandler "github.com/yttydcs/myflowhub-server/subproto/auth"
+	authhandler "github.com/yttydcs/myflowhub-subproto/auth"
 )
 
 func newAuthHandler(cfg core.IConfig, log *slog.Logger) core.ISubProcess {

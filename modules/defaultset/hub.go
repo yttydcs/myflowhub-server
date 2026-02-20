@@ -5,7 +5,7 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-subproto/management"
-	"github.com/yttydcs/myflowhub-server/subproto/forward"
+	"github.com/yttydcs/myflowhub-subproto/forward"
 )
 
 // DefaultHub 返回 hub_server 的默认启用模块集合（handlers + default fallback）。

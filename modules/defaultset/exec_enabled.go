@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	exechandler "github.com/yttydcs/myflowhub-server/subproto/exec"
+	exechandler "github.com/yttydcs/myflowhub-subproto/exec"
 )
 
 func newExecHandler(cfg core.IConfig, log *slog.Logger) core.ISubProcess {

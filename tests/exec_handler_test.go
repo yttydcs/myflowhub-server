@@ -8,7 +8,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	protocolexec "github.com/yttydcs/myflowhub-proto/protocol/exec"
-	serverexec "github.com/yttydcs/myflowhub-server/subproto/exec"
+	serverexec "github.com/yttydcs/myflowhub-subproto/exec"
 )
 
 func TestExecCallRespMajorOKResp(t *testing.T) {

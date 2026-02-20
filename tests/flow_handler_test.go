@@ -9,7 +9,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	protocolflow "github.com/yttydcs/myflowhub-proto/protocol/flow"
-	serverflow "github.com/yttydcs/myflowhub-server/subproto/flow"
+	serverflow "github.com/yttydcs/myflowhub-subproto/flow"
 )
 
 func TestFlowSetRespMajorOKRespOnInvalidSet(t *testing.T) {

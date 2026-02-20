@@ -7,7 +7,7 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
-	varstorehandler "github.com/yttydcs/myflowhub-server/subproto/varstore"
+	varstorehandler "github.com/yttydcs/myflowhub-subproto/varstore"
 )
 
 func newVarStoreHandler(cfg core.IConfig, log *slog.Logger) core.ISubProcess {

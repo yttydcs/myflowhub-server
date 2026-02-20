@@ -8,7 +8,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-server/subproto/forward"
+	"github.com/yttydcs/myflowhub-subproto/forward"
 )
 
 // 验证：未配置 default forward 时，默认转发到父节点
