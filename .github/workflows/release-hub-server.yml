@@ -1,0 +1,55 @@
+name: release-hub-server
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build hub_server (windows/linux amd64)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf dist
+          mkdir -p dist/windows_amd64 dist/linux_amd64
+
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" -o dist/windows_amd64/hub_server.exe ./cmd/hub_server
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" -o dist/linux_amd64/hub_server ./cmd/hub_server
+
+      - name: Package + checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+
+          (cd windows_amd64 && zip -q -r ../hub_server_windows_amd64.zip hub_server.exe)
+          (cd linux_amd64 && zip -q -r ../hub_server_linux_amd64.zip hub_server)
+
+          sha256sum hub_server_*.zip > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/hub_server_windows_amd64.zip
+            dist/hub_server_linux_amd64.zip
+            dist/checksums.txt
