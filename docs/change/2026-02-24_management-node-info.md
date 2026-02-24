@@ -6,6 +6,7 @@ management 子协议新增 `node_info` 后，需要在 Server 仓补充最小集
 ## 具体变更内容
 - 修改：
   - `protocol/management/types.go`：兼容壳补充 `ActionNodeInfo/Resp`、`NodeInfoReq/Resp` 的常量与类型委托
+  - `go.mod`、`go.sum`：依赖升级到 `myflowhub-proto v0.1.1` 与 `myflowhub-subproto/management v0.1.1`
 - 新增：
   - `tests/integration_management_node_info_test.go`：新增集成测试，发送 `node_info` 并断言返回包含 `platform/node_id`
 
@@ -24,4 +25,3 @@ management 子协议新增 `node_info` 后，需要在 Server 仓补充最小集
 ## 潜在影响与回滚方案
 - 影响：仅新增测试与兼容壳常量/类型委托，不改变运行逻辑。
 - 回滚：revert 本提交。
-
