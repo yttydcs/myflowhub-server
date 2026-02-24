@@ -10,6 +10,8 @@ const SubProtoManagement uint8 = protocol.SubProtoManagement
 const (
 	ActionNodeEcho        = protocol.ActionNodeEcho
 	ActionNodeEchoResp    = protocol.ActionNodeEchoResp
+	ActionNodeInfo        = protocol.ActionNodeInfo
+	ActionNodeInfoResp    = protocol.ActionNodeInfoResp
 	ActionListNodes       = protocol.ActionListNodes
 	ActionListNodesResp   = protocol.ActionListNodesResp
 	ActionListSubtree     = protocol.ActionListSubtree
@@ -26,6 +28,8 @@ type Message = protocol.Message
 
 type NodeEchoReq = protocol.NodeEchoReq
 type NodeEchoResp = protocol.NodeEchoResp
+type NodeInfoReq = protocol.NodeInfoReq
+type NodeInfoResp = protocol.NodeInfoResp
 type ListNodesReq = protocol.ListNodesReq
 type ListNodesResp = protocol.ListNodesResp
 type ConfigGetReq = protocol.ConfigGetReq
