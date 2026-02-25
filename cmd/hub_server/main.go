@@ -6,169 +6,64 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
-	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-core/config"
-	"github.com/yttydcs/myflowhub-core/connmgr"
-	"github.com/yttydcs/myflowhub-core/header"
-	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
-	"github.com/yttydcs/myflowhub-core/process"
-	"github.com/yttydcs/myflowhub-core/server"
-	"github.com/yttydcs/myflowhub-server/modules"
+	"github.com/yttydcs/myflowhub-server/hubruntime"
 )
 
-type options struct {
-	addr               string
-	nodeID             uint
-	parentAddr         string
-	parentEnable       bool
-	parentReconnectSec int
-	procChannels       int
-	procWorkers        int
-	procBuffer         int
-	sendChannels       int
-	sendWorkers        int
-	sendChannelBuffer  int
-	sendConnBuffer     int
-	authDefaultRole    string
-	authDefaultPerms   string
-	authNodeRoles      string
-	authRolePerms      string
-}
-
 func main() {
-	opts := defaultOptions()
-	flag.StringVar(&opts.addr, "addr", opts.addr, "listen address")
-	flag.UintVar(&opts.nodeID, "node-id", opts.nodeID, "node id for this hub")
-	flag.StringVar(&opts.parentAddr, "parent", opts.parentAddr, "parent address")
-	flag.BoolVar(&opts.parentEnable, "parent-enable", opts.parentEnable, "enable parent link")
-	flag.IntVar(&opts.parentReconnectSec, "parent-reconnect", opts.parentReconnectSec, "parent reconnect seconds")
-	flag.IntVar(&opts.procChannels, "proc-channels", opts.procChannels, "process channel count")
-	flag.IntVar(&opts.procWorkers, "proc-workers", opts.procWorkers, "process workers per channel")
-	flag.IntVar(&opts.procBuffer, "proc-buffer", opts.procBuffer, "process channel buffer")
-	flag.IntVar(&opts.sendChannels, "send-channels", opts.sendChannels, "send dispatcher channels")
-	flag.IntVar(&opts.sendWorkers, "send-workers", opts.sendWorkers, "send dispatcher workers per channel")
-	flag.IntVar(&opts.sendChannelBuffer, "send-channel-buffer", opts.sendChannelBuffer, "send dispatcher channel buffer")
-	flag.IntVar(&opts.sendConnBuffer, "send-conn-buffer", opts.sendConnBuffer, "per-connection send buffer")
-	flag.StringVar(&opts.authDefaultRole, "auth-default-role", opts.authDefaultRole, "default role for nodes")
-	flag.StringVar(&opts.authDefaultPerms, "auth-default-perms", opts.authDefaultPerms, "default perms (comma separated)")
-	flag.StringVar(&opts.authNodeRoles, "auth-node-roles", opts.authNodeRoles, "node roles mapping, e.g. 1:admin;2:node")
-	flag.StringVar(&opts.authRolePerms, "auth-role-perms", opts.authRolePerms, "role perms mapping, e.g. admin:p1,p2;node:p3")
+	opts := hubruntime.DefaultOptionsFromEnv()
+	nodeID := uint(opts.NodeID)
+
+	flag.StringVar(&opts.Addr, "addr", opts.Addr, "listen address")
+	flag.UintVar(&nodeID, "node-id", nodeID, "node id for this hub (0 means auto when parent+self-id enabled)")
+	flag.StringVar(&opts.ParentAddr, "parent", opts.ParentAddr, "parent address")
+	flag.BoolVar(&opts.ParentEnable, "parent-enable", opts.ParentEnable, "enable parent link")
+	flag.IntVar(&opts.ParentReconnectSec, "parent-reconnect", opts.ParentReconnectSec, "parent reconnect seconds")
+	flag.IntVar(&opts.ProcChannels, "proc-channels", opts.ProcChannels, "process channel count")
+	flag.IntVar(&opts.ProcWorkers, "proc-workers", opts.ProcWorkers, "process workers per channel")
+	flag.IntVar(&opts.ProcBuffer, "proc-buffer", opts.ProcBuffer, "process channel buffer")
+	flag.IntVar(&opts.SendChannels, "send-channels", opts.SendChannels, "send dispatcher channels")
+	flag.IntVar(&opts.SendWorkers, "send-workers", opts.SendWorkers, "send dispatcher workers per channel")
+	flag.IntVar(&opts.SendChannelBuffer, "send-channel-buffer", opts.SendChannelBuffer, "send dispatcher channel buffer")
+	flag.IntVar(&opts.SendConnBuffer, "send-conn-buffer", opts.SendConnBuffer, "per-connection send buffer")
+	flag.StringVar(&opts.AuthDefaultRole, "auth-default-role", opts.AuthDefaultRole, "default role for nodes")
+	flag.StringVar(&opts.AuthDefaultPerms, "auth-default-perms", opts.AuthDefaultPerms, "default perms (comma separated)")
+	flag.StringVar(&opts.AuthNodeRoles, "auth-node-roles", opts.AuthNodeRoles, "node roles mapping, e.g. 1:admin;2:node")
+	flag.StringVar(&opts.AuthRolePerms, "auth-role-perms", opts.AuthRolePerms, "role perms mapping, e.g. admin:p1,p2;node:p3")
+	flag.StringVar(&opts.WorkDir, "workdir", opts.WorkDir, "working directory for relative paths (optional)")
+	flag.StringVar(&opts.SelfID, "self-id", opts.SelfID, "self device id (for parent self-register/bootstrap)")
 	flag.Parse()
 
-	if opts.parentAddr != "" {
-		opts.parentEnable = true
-	}
-
-	log := setupLogger()
-	cfg := buildConfig(opts)
-
-	cm := connmgr.New()
-	base := process.NewPreRoutingProcess(log).WithConfig(cfg)
-	dispatcher, err := process.NewDispatcherFromConfig(cfg, base, log)
-	if err != nil {
-		log.Error("build dispatcher failed", "err", err)
-		os.Exit(1)
-	}
-	set, err := modules.DefaultHub(cfg, log)
-	if err != nil {
-		log.Error("build hub modules failed", "err", err)
-		os.Exit(1)
-	}
-	if err := modules.RegisterAll(dispatcher, set); err != nil {
-		log.Error("register hub modules failed", "err", err)
-		os.Exit(1)
-	}
-
-	lst := tcp_listener.New(opts.addr, tcp_listener.Options{
-		KeepAlive:       true,
-		KeepAlivePeriod: 30 * time.Second,
-		Logger:          log,
-	})
-	codec := header.HeaderTcpCodec{}
-
-	srv, err := server.New(server.Options{
-		Name:     "HubServer",
-		Logger:   log,
-		Process:  dispatcher,
-		Codec:    codec,
-		Listener: lst,
-		Config:   cfg,
-		Manager:  cm,
-		NodeID:   uint32(opts.nodeID),
-	})
-	if err != nil {
-		log.Error("init server failed", "err", err)
-		os.Exit(1)
-	}
+	opts.NodeID = uint32(nodeID)
+	opts.Logger = setupLogger()
+	opts.Normalize()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := srv.Start(ctx); err != nil {
-		log.Error("start server failed", "err", err)
+	rt, err := hubruntime.New(opts)
+	if err != nil {
+		slog.Error("init runtime failed", "err", err)
 		os.Exit(1)
 	}
-	modules.BindServerHooks(srv, set)
-	log.Info("hub server started", "addr", opts.addr, "node_id", opts.nodeID, "parent", opts.parentAddr)
+	if err := rt.Start(ctx); err != nil {
+		slog.Error("start runtime failed", "err", err)
+		os.Exit(1)
+	}
+	st := rt.Status()
+	slog.Info("hub server started", "addr", st.Addr, "node_id", st.NodeID, "parent", st.ParentAddr)
 
 	waitSignal()
 
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stopCancel()
-	if err := srv.Stop(stopCtx); err != nil {
-		log.Error("stop server failed", "err", err)
+	if err := rt.Stop(stopCtx); err != nil {
+		slog.Error("stop runtime failed", "err", err)
 		os.Exit(1)
 	}
-	log.Info("hub server stopped")
-}
-
-func buildConfig(opts options) core.IConfig {
-	data := map[string]string{
-		"addr":                         opts.addr,
-		config.KeyParentAddr:           opts.parentAddr,
-		config.KeyParentEnable:         strconv.FormatBool(opts.parentEnable),
-		config.KeyParentReconnectSec:   strconv.Itoa(opts.parentReconnectSec),
-		config.KeyProcChannelCount:     strconv.Itoa(opts.procChannels),
-		config.KeyProcWorkersPerChan:   strconv.Itoa(opts.procWorkers),
-		config.KeyProcChannelBuffer:    strconv.Itoa(opts.procBuffer),
-		config.KeySendChannelCount:     strconv.Itoa(opts.sendChannels),
-		config.KeySendWorkersPerChan:   strconv.Itoa(opts.sendWorkers),
-		config.KeySendChannelBuffer:    strconv.Itoa(opts.sendChannelBuffer),
-		config.KeySendConnBuffer:       strconv.Itoa(opts.sendConnBuffer),
-		config.KeyRoutingForwardRemote: "true",
-		config.KeyAuthDefaultRole:      strings.TrimSpace(opts.authDefaultRole),
-		config.KeyAuthDefaultPerms:     strings.TrimSpace(opts.authDefaultPerms),
-		config.KeyAuthNodeRoles:        strings.TrimSpace(opts.authNodeRoles),
-		config.KeyAuthRolePerms:        strings.TrimSpace(opts.authRolePerms),
-	}
-	return config.NewMap(data)
-}
-
-func defaultOptions() options {
-	return options{
-		addr:               getenv("HUB_ADDR", ":9000"),
-		nodeID:             getenvUint("HUB_NODE_ID", 1),
-		parentAddr:         getenv("HUB_PARENT_ADDR", ""),
-		parentEnable:       core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
-		parentReconnectSec: int(getenvInt("HUB_PARENT_RECONNECT", 3)),
-		procChannels:       int(getenvInt("HUB_PROC_CHANNELS", 4)),
-		procWorkers:        int(getenvInt("HUB_PROC_WORKERS", 8)),
-		procBuffer:         int(getenvInt("HUB_PROC_BUFFER", 256)),
-		sendChannels:       int(getenvInt("HUB_SEND_CHANNELS", 2)),
-		sendWorkers:        int(getenvInt("HUB_SEND_WORKERS", 2)),
-		sendChannelBuffer:  int(getenvInt("HUB_SEND_CHANNEL_BUFFER", 128)),
-		sendConnBuffer:     int(getenvInt("HUB_SEND_CONN_BUFFER", 128)),
-		authDefaultRole:    getenv("HUB_AUTH_DEFAULT_ROLE", "node"),
-		authDefaultPerms:   getenv("HUB_AUTH_DEFAULT_PERMS", ""),
-		authNodeRoles:      getenv("HUB_AUTH_NODE_ROLES", ""),
-		// 默认给 node 角色开放 file/flow/exec 权限（可用 HUB_AUTH_ROLE_PERMS 覆盖）
-		authRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write,flow.set,exec.call"),
-	}
+	slog.Info("hub server stopped")
 }
 
 func setupLogger() *slog.Logger {
@@ -184,29 +79,4 @@ func waitSignal() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	<-ch
-}
-
-func getenv(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return def
-}
-
-func getenvInt(key string, def int64) int64 {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return n
-		}
-	}
-	return def
-}
-
-func getenvUint(key string, def uint) uint {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		if n, err := strconv.ParseUint(v, 10, 32); err == nil {
-			return uint(n)
-		}
-	}
-	return def
 }

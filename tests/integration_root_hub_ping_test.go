@@ -4,33 +4,48 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"testing"
 	"time"
 
 	core "github.com/yttydcs/myflowhub-core"
-	"github.com/yttydcs/myflowhub-core/bootstrap"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
-	"github.com/yttydcs/myflowhub-subproto/management"
+	"github.com/yttydcs/myflowhub-server/hubruntime"
 	auth "github.com/yttydcs/myflowhub-subproto/auth"
 	"github.com/yttydcs/myflowhub-subproto/forward"
-	vartstore "github.com/yttydcs/myflowhub-subproto/varstore"
+	"github.com/yttydcs/myflowhub-subproto/management"
 )
 
-// Integration: Root (node=1) -> Hub (self-register) -> Client (Echo ping).
+// Integration: Client -> Root (forward cmd) -> Hub (resp) -> Root (route back) -> Client.
+//
+// This test covers:
+// - hubruntime self-register (pre-start) to obtain node_id
+// - parent bootstrap (post-start) register on persistent parent link to bind root-side meta(nodeID)
+// - management cmd forwarding by target id across hub tree
 func TestRootHubPing(t *testing.T) {
+	oldWD, _ := os.Getwd()
+	tmp := t.TempDir()
+	_ = os.Chdir(tmp)
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
 	rootAddr := freeAddr()
 	hubAddr := freeAddr()
 
-	// Root handles login locally for self-register.
+	// Root handles login locally and can forward management cmd by target id.
 	rootCfg := config.NewMap(map[string]string{
 		"addr": rootAddr,
 	})
-	rootHandlers := []core.ISubProcess{auth.NewLoginHandlerWithConfig(rootCfg, nil), vartstore.NewVarStoreHandlerWithConfig(rootCfg, nil)}
+	rootHandlers := []core.ISubProcess{
+		management.NewHandler(nil),
+		auth.NewLoginHandlerWithConfig(rootCfg, nil),
+	}
 	rootSrv := startTestServer(t, server.Options{
 		Name:     "Root",
 		Process:  makeProcess(t, rootCfg, rootHandlers),
@@ -44,64 +59,43 @@ func TestRootHubPing(t *testing.T) {
 
 	waitListen(t, rootAddr, 2*time.Second)
 
-	// Hub self-register to get node id from root.
-	nodeID, _, err := bootstrap.SelfRegister(context.Background(), bootstrap.SelfRegisterOptions{
-		ParentAddr: rootAddr,
-		SelfID:     "hub-test",
-		Timeout:    5 * time.Second,
-		DoLogin:    false, // login可后续补上
+	// Hub: start via hubruntime (self-register + parent bootstrap).
+	rt, err := hubruntime.New(hubruntime.Options{
+		Addr:         hubAddr,
+		NodeID:       0,
+		ParentAddr:   rootAddr,
+		ParentEnable: true,
+		SelfID:       "hub-test",
 	})
 	if err != nil {
-		t.Fatalf("self register: %v", err)
+		t.Fatalf("init hub runtime: %v", err)
 	}
-	if nodeID == 0 {
-		t.Fatalf("self register returned node id 0")
+	if err := rt.Start(context.Background()); err != nil {
+		t.Fatalf("start hub runtime: %v", err)
 	}
-
-	hubCfg := config.NewMap(map[string]string{
-		"addr":                 hubAddr,
-		config.KeyParentEnable: "true",
-		config.KeyParentAddr:   rootAddr,
-	})
-	hubHandlers := []core.ISubProcess{management.NewHandler(nil), auth.NewLoginHandlerWithConfig(hubCfg, nil), vartstore.NewVarStoreHandlerWithConfig(hubCfg, nil)}
-	hubSrv := startTestServer(t, server.Options{
-		Name:     "Hub",
-		Process:  makeProcess(t, hubCfg, hubHandlers),
-		Codec:    header.HeaderTcpCodec{},
-		Listener: tcp_listener.New(hubAddr),
-		Config:   hubCfg,
-		Manager:  connmgr.New(),
-		NodeID:   nodeID,
-	})
-	defer stopTestServer(t, hubSrv)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = rt.Stop(ctx)
+	}()
+	hubNodeID := rt.Status().NodeID
+	if hubNodeID == 0 {
+		t.Fatalf("hub runtime node id 0")
+	}
 	waitListen(t, hubAddr, 2*time.Second)
 
-	// Client sends mgmt echo to hub.
-	conn, err := net.Dial("tcp", hubAddr)
+	// Wait for root to bind meta(nodeID) for the persistent parent link (bootstrap must kick in).
+	waitNodeIndex(t, rootSrv.ConnManager(), hubNodeID, 3*time.Second)
+
+	// Client registers to root, then sends management echo (target=hub).
+	conn, err := net.Dial("tcp", rootAddr)
 	if err != nil {
-		t.Fatalf("dial hub: %v", err)
+		t.Fatalf("dial root: %v", err)
 	}
 	defer conn.Close()
-	// 绑定服务端对应的连接 nodeID，模拟已登录状态以满足 Source 校验。
-	clientAddr := conn.LocalAddr().String()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		found := false
-		hubSrv.ConnManager().Range(func(c core.IConnection) bool {
-			if c.RemoteAddr() != nil && c.RemoteAddr().String() == clientAddr {
-				c.SetMeta("nodeID", nodeID)
-				found = true
-				return false
-			}
-			return true
-		})
-		if found {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
 
 	codec := header.HeaderTcpCodec{}
+	clientNodeID := registerOnConn(t, conn, codec, "client-test")
 	payload := mustJSON(map[string]any{
 		"action": "node_echo",
 		"data":   map[string]any{"message": "ping"},
@@ -109,8 +103,8 @@ func TestRootHubPing(t *testing.T) {
 	hdr := (&header.HeaderTcp{}).
 		WithMajor(header.MajorCmd).
 		WithSubProto(management.SubProtoManagement).
-		WithSourceID(nodeID).
-		WithTargetID(nodeID).
+		WithSourceID(clientNodeID).
+		WithTargetID(hubNodeID).
 		WithMsgID(1).
 		WithPayloadLength(uint32(len(payload)))
 	frame, _ := codec.Encode(hdr, payload)
@@ -137,6 +131,60 @@ func TestRootHubPing(t *testing.T) {
 	if resp.Code != 1 || resp.Echo != "ping" {
 		t.Fatalf("unexpected resp: %+v", resp)
 	}
+}
+
+func registerOnConn(t *testing.T, conn net.Conn, codec header.HeaderTcpCodec, deviceID string) uint32 {
+	t.Helper()
+	payload := mustJSON(map[string]any{
+		"action": "register",
+		"data":   map[string]any{"device_id": deviceID},
+	})
+	hdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(2).
+		WithSourceID(0).
+		WithTargetID(0).
+		WithMsgID(1).
+		WithPayloadLength(uint32(len(payload)))
+	frame, _ := codec.Encode(hdr, payload)
+	if _, err := conn.Write(frame); err != nil {
+		t.Fatalf("register write: %v", err)
+	}
+	_, respPayload, err := codec.Decode(conn)
+	if err != nil {
+		t.Fatalf("register decode: %v", err)
+	}
+	var msg struct {
+		Action string          `json:"action"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(respPayload, &msg); err != nil {
+		t.Fatalf("register unmarshal msg: %v", err)
+	}
+	var resp struct {
+		Code   int    `json:"code"`
+		NodeID uint32 `json:"node_id"`
+		Msg    string `json:"msg"`
+	}
+	if err := json.Unmarshal(msg.Data, &resp); err != nil {
+		t.Fatalf("register unmarshal resp: %v", err)
+	}
+	if resp.Code != 1 || resp.NodeID == 0 {
+		t.Fatalf("register failed: code=%d node_id=%d msg=%s", resp.Code, resp.NodeID, resp.Msg)
+	}
+	return resp.NodeID
+}
+
+func waitNodeIndex(t *testing.T, cm core.IConnectionManager, nodeID uint32, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if c, ok := cm.GetByNode(nodeID); ok && c != nil {
+			return
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("waitNodeIndex timeout for node_id=%d", nodeID)
 }
 
 func makeProcess(t *testing.T, cfg core.IConfig, handlers []core.ISubProcess) core.IProcess {
