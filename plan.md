@@ -1,77 +1,80 @@
-# Plan - Server：升级 SubProto Management 至 v0.1.2（children-only）
+# Plan - Server：升级 SubProto File 至 v0.1.1（修复 Hub File Console not found）
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`chore/bump-management-v0.1.2`
-- Worktree：`d:\project\MyFlowHub3\worktrees\chore-server-bump-management-v0.1.2`
-- Base：`origin/main`
+- 分支：`fix/hub-file-console-base-dir`
+- Worktree：`d:\project\MyFlowHub3\worktrees\fix-hub-file-console-base-dir\MyFlowHub-Server`
+- Base：`main`
 - 关联发布：
-  - `myflowhub-subproto`：发布 tag `management/v0.1.2`
-- 参考：`d:\project\MyFlowHub3\guide.md`（commit 信息中文）
+  - `myflowhub-subproto/file`：发布 tag `file/v0.1.1`
+- 关联仓库（同一 workflow）：`MyFlowHub-SubProto`（同名分支/独占 worktree）
+- 参考：
+  - `d:\project\MyFlowHub3\repos.md`
+  - `d:\project\MyFlowHub3\guide.md`（commit 信息中文）
 
 ## 背景 / 问题陈述（事实，可审计）
-- `myflowhub-subproto/management v0.1.1` 的 `list_nodes` 在存在 parent link 的节点上会枚举到 upstream(parent) 连接，导致设备树出现回指（例如 `5 -> 1`）。
-- `myflowhub-subproto` 已在 `main` 修复为 children-only（过滤 `role=parent`），但尚未发布新版本。
-- `MyFlowHub-Server` 当前依赖 `myflowhub-subproto/management v0.1.1`，因此仍不会获得修复。
+- Win 的 File Console 访问 Hub（node1）时提示：`not found`。
+- 根因在 `myflowhub-subproto/file v0.1.0`：
+  - root list 时 `BaseDir(默认 ./file)` 不存在会被映射为 `404 not found`；
+  - 相对路径以 CWD 为基准导致目录落点不稳定。
+- `myflowhub-subproto/file v0.1.1` 将修复上述问题（详见 SubProto 仓计划/变更文档）。
 
 ## 目标
-1) 发布 `github.com/yttydcs/myflowhub-subproto/management v0.1.2`（tag：`management/v0.1.2`）。
-2) 将 `MyFlowHub-Server` 的依赖从 `management v0.1.1` 升级到 `v0.1.2`，并更新 `go.sum`。
+1) 将 `MyFlowHub-Server` 依赖 `github.com/yttydcs/myflowhub-subproto/file` 从 `v0.1.0` 升级到 `v0.1.1`。
+2) 更新 `go.sum` 并通过最小验证测试。
 3) 归档变更，保证可审计、可回滚。
 
 ## 非目标
-- 不修改 `management` 的 wire schema（已在 SubProto 仓库完成行为修复，本次仅做发布与依赖升级）。
+- 不修改 Server 侧 file handler 装配逻辑（仍由 `modules/defaultset/file_enabled.go` 装配）。
 - 不发布 `myflowhub-server` 新版本 tag（如需对外发布另起 workflow）。
-- 不触发 Android CI 构建（若需要触发 `debug-latest`，应在 Android 仓库另起提交或另起 workflow）。
 
 ## 约束（边界）
-- 必须以 `GOWORK=off` 方式验证（避免 go.work 掩盖依赖问题）。
 - 变更最小化：只改 `go.mod/go.sum` 与文档。
+- 验收测试必须使用 `GOWORK=off`（避免本地 `go.work` 掩盖依赖问题）。
 
 ## 验收标准
-- `myflowhub-subproto`：
-  - tag `management/v0.1.2` 存在且已 push 到 `origin`；
-  - `go list -m github.com/yttydcs/myflowhub-subproto/management@v0.1.2` 可解析。
-- `myflowhub-server`：
-  - `go.mod` 中 `github.com/yttydcs/myflowhub-subproto/management` 版本为 `v0.1.2`；
-  - `GOWORK=off go test ./... -count=1 -p 1` 通过。
+- `go.mod` 中 `github.com/yttydcs/myflowhub-subproto/file` 版本为 `v0.1.1`；
+- `GOWORK=off go test ./... -count=1 -p 1` 通过；
+- `go list -m github.com/yttydcs/myflowhub-subproto/file@v0.1.1` 可解析（证明 tag 可拉取）。
 
 ---
 
 ## 3.1) 计划拆分（Checklist）
 
-### SVRMG0 - 归档旧 plan.md
-- 目标：避免历史 plan 覆盖本次任务。
-- 已执行：`plan.md` → `docs/plan_archive/plan_archive_2026-03-03_server-bump-management-v0.1.2-prev.md`
+### SRV0 - 归档旧 plan（已执行）
+- 目标：避免历史 plan 覆盖本 workflow。
+- 已执行：`git mv plan.md docs/plan_archive/plan_archive_2026-03-04_server-bump-management-v0.1.2.md`
 - 验收条件：归档文件存在且可阅读。
-- 回滚点：撤销该移动提交。
+- 回滚点：撤销该 `git mv`。
 
-### SVRMG1 - 发布 `management/v0.1.2` tag
-- 目标：让上游可通过 semver 依赖拉取修复版本。
-- 涉及仓库：`repo/MyFlowHub-SubProto`
-- 操作：
-  - `git fetch --tags`（确认 tag 未占用）
-  - `git tag -a management/v0.1.2 <commit> -m ...`
-  - `git push origin management/v0.1.2`
-- 验收条件：远端可见 tag，且 `go list -m ...@v0.1.2` 成功。
-- 回滚点：删除 tag（高风险，需谨慎；仅在确认未被消费时执行）。
+### SRV1 - 升级依赖：`myflowhub-subproto/file v0.1.1`
+**目标**
+- 获取 SubProto 修复（root list 自动创建 + BaseDir exeDir 解析）。
 
-### SVRMG2 - 升级 Server 依赖到 `management v0.1.2`
-- 目标：Server 编译/运行使用新版本 management 行为（children-only）。
-- 涉及文件：
-  - `go.mod`
-  - `go.sum`
-- 操作：
-  - `GOWORK=off go get github.com/yttydcs/myflowhub-subproto/management@v0.1.2`
-  - `GOWORK=off go mod tidy`
-- 验收条件：`go.mod/go.sum` 更新且最小化；`go test` 通过。
-- 回滚点：revert 提交。
+**涉及模块 / 文件**
+- `go.mod`
+- `go.sum`
 
-### SVRMG3 - Code Review（阶段 3.3）
-- 目标：确认只发生依赖升级与可审计文档变更；风险可控。
+**验收条件**
+- `go.mod` 依赖版本更新为 `v0.1.1` 且 `go mod tidy`（如需要）后无额外无关 diff。
 
-### SVRMG4 - 归档变更（阶段 4）
-- 目标：记录发布与依赖升级过程、测试与回滚方式。
-- 涉及文件：
-  - `docs/change/2026-03-03_server-bump-management-v0.1.2.md`
+**测试点**
+- `GOWORK=off go test ./... -count=1 -p 1`
+
+**回滚点**
+- revert 该提交（回到 `v0.1.0`）。
+
+### SRV2 - 验收：依赖可解析与编译通过
+**目标**
+- 确保 tag 已发布且依赖可拉取（避免“本地 replace/缓存”假通过）。
+
+**验收条件**
+- `go list -m github.com/yttydcs/myflowhub-subproto/file@v0.1.1` 成功。
+
+**回滚点**
+- 若依赖无法解析：阻塞并回到 SubProto workflow 修复发布流程。
+
+### SRV3 - Code Review（强制）+ 归档变更（强制）
+**目标**
+- 输出 `docs/change/YYYY-MM-DD_*.md`，记录依赖升级原因、验证与回滚方案。
 
