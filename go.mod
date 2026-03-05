@@ -14,7 +14,7 @@ require (
 	github.com/yttydcs/myflowhub-subproto/forward v0.1.0
 	github.com/yttydcs/myflowhub-subproto/management v0.1.2
 	github.com/yttydcs/myflowhub-subproto/topicbus v0.1.0
-	github.com/yttydcs/myflowhub-subproto/varstore v0.1.0
+	github.com/yttydcs/myflowhub-subproto/varstore v0.1.1
 )
 
 require github.com/yttydcs/myflowhub-subproto/broker v0.1.0 // indirect
