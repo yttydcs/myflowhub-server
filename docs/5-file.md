@@ -121,7 +121,7 @@ HeaderTcp 与路由约定
   - `text`：UTF-8 文本内容
   - `truncated`：是否被截断
 
-### action=write（offer 等，权限：file.write）
+### action=write（offer/mkdir 等，权限：file.write）
 
 #### op=offer（A 向 B 提供文件）
 - 请求方：A（提供方）
@@ -146,6 +146,30 @@ HeaderTcp 与路由约定
   - `dir` / `name` / `size` / `sha256`：可选（回显，便于无状态实现）
   - `accept`：是否接受（默认 true）
   - `resume_from`：接收方 B 允许从该偏移开始接收（默认 0；若存在匹配的 `.part` 可返回其大小）
+
+#### op=mkdir（创建目录）
+> 用于在目标节点 `base_dir` 下创建子目录；归属于 `file.write` 权限。
+
+- 请求方：任意具备 `file.write` 的节点（通常是控制端）
+- 目标（data.target）：目录实际创建节点
+
+- 请求 data（示例字段）：
+  - `op`：固定 `"mkdir"`
+  - `target`：目标 nodeID（必填）
+  - `dir`：父目录（相对路径，可为空）
+  - `name`：待创建目录名（禁止包含 `/`、`\\`，禁止 `.`/`..`）
+
+- 响应 write_resp.data（示例字段）：
+  - `code` / `msg`
+  - `op`：`"mkdir"`
+  - `provider`：执行创建的节点（可选）
+  - `consumer`：请求方节点（可选）
+  - `dir` / `name`：回显规范化后的路径参数
+
+- 语义约束（建议）：
+  - 目录已存在：返回成功（`code=1`，幂等）；
+  - 同名文件已存在：返回冲突（`code=409`）；
+  - 非法路径：返回 `code=400`。
 
 二进制传输帧（DATA/ACK）
 ----------------------
@@ -220,6 +244,11 @@ payload 结构：
 2) 授权 Hub → B：转交 offer
 3) B → A：`write_resp(accept,resume_from)`；若拒绝则结束
 4) A 从 `resume_from` 起发送 DATA；B 回 ACK；完成后校验落盘
+
+### mkdir（控制端 write/mkdir 目标节点）
+1) 请求方 → 父Hub：CTRL `write(op=mkdir,target=T,dir,name)`（逐跳判权）
+2) 授权 Hub → T：转交请求（`TargetID=T`）
+3) T 本地执行目录创建并返回 `write_resp(op=mkdir)`
 
 错误码（建议）
 ------------
