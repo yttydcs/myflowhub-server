@@ -75,7 +75,7 @@ VarStore 协议（SubProto=3）新规范
 - list：`{"action":"list","data":{"owner":5}}`
 - revoke：`{"action":"revoke","data":{"name":"sensor_a"}}`
 - 成功 get_resp：`{"action":"get_resp","data":{"code":1,"name":"sensor_a","value":"22.5","owner":5,"visibility":"public","type":"string"}}`
-- 未命中：`{"action":"get_resp","data":{"code":404,"msg":"not found"}}`
+- 未命中：`{"action":"get_resp","data":{"code":4,"msg":"not found"}}`
 
 集成提示
 --------
