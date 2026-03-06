@@ -1,45 +1,50 @@
-# TODO - Server：升级 subproto/varstore 到 v0.1.1（跨层转发修复）
+# TODO - Server 文档勘误：VarStore `not found` 错误码示例对齐
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`chore/server-bump-varstore-v0.1.1`
-- Worktree：`d:\project\MyFlowHub3\worktrees\chore-server-bump-varstore-v0.1.1`
-- 上游版本：`github.com/yttydcs/myflowhub-subproto/varstore v0.1.1`
+- 分支：`chore/server-varstore-docs-errorcode`
+- Worktree：`d:\project\MyFlowHub3\worktrees\chore-server-varstore-docs-errorcode`
+- Base：`main`
 
 ## 项目目标与当前状态
-- 目标：
-  - 将 Server 的 `myflowhub-subproto/varstore` 依赖从 `v0.1.0` 升级到 `v0.1.1`，纳入跨层 target 转发与 owner 路由自愈修复。
-- 当前状态：
-  - `go.mod` 仍为 `varstore v0.1.0`。
+
+### 目标
+1) 将 VarStore 规范文档中的错误码示例与“错误码约定”对齐，避免客户端误读（`4` vs `404`）。
+2) 不改变协议实现，仅修正文档描述。
+
+### 当前状态（事实）
+- 文档错误码约定定义：`4` = 未找到。
+- 同一文档示例处出现：`{"code":404,"msg":"not found"}`。
+- 当前实现侧在 `list/get` 等场景使用 `code=4`（非 `404`）。
 
 ## 可执行任务清单（Checklist）
 
-- [x] SRVVAR-1：升级依赖版本
-  - 目标：`go.mod/go.sum` 对齐 `varstore v0.1.1`。
+- [x] `DOCERRATA-1`：修正规范文档错误码示例
+  - 目标：将 `docs/3-varstore.md` 的 not found 示例码从 `404` 调整为 `4`。
   - 涉及文件：
-    - `go.mod`
-    - `go.sum`
+    - `docs/3-varstore.md`
   - 验收条件：
-    - `go list -m github.com/yttydcs/myflowhub-subproto/varstore` 输出 `v0.1.1`。
+    - 文档示例与错误码约定一致。
   - 回滚点：
-    - 回退 `go.mod/go.sum` 到 `v0.1.0`。
+    - revert 本任务提交。
 
-- [x] SRVVAR-2：最小回归验证
-  - 目标：保证升级后 Server 模块可构建/测试。
+- [x] `DOCERRATA-2`：文档一致性复查
+  - 目标：确认同文档无其它 `404` 残留语义冲突。
   - 验收条件：
-    - `GOWORK=off go test ./... -count=1 -p 1` 通过。
+    - `docs/3-varstore.md` 内相关示例与约定一致。
   - 回滚点：
-    - 回退依赖升级提交。
+    - revert 本任务提交。
 
-- [x] SRVVAR-3：Code Review + 归档
+- [x] `DOCERRATA-3`：Code Review + 归档
   - 目标：完成审查闭环与变更归档。
   - 涉及文件：
-    - `docs/change/2026-03-05_server-bump-subproto-varstore-v0.1.1.md`
+    - `docs/change/2026-03-06_server-varstore-doc-errorcode-align.md`
   - 验收条件：
-    - 文档包含任务映射、验证结果、影响与回滚。
+    - 审查结论完整；
+    - 归档内容包含任务映射、影响评估、回滚方案。
 
 ## 依赖关系
-- `SRVVAR-1 -> SRVVAR-2 -> SRVVAR-3`
+- `DOCERRATA-1 -> DOCERRATA-2 -> DOCERRATA-3`
 
 ## 风险与注意事项
-- 仅升级依赖，不混入功能改动。
+- 本 workflow 仅修文档，不改协议 wire 与实现行为；避免与功能修复混杂。
