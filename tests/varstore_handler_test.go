@@ -228,12 +228,25 @@ func TestVarStorePrivateSetRequiresPermission(t *testing.T) {
 	h.OnReceive(ctx, unauth, hdr, req)
 
 	// 未在子树，先向上 assist；模拟上游返回权限不足
+	if len(parent.sent) == 0 {
+		t.Fatalf("expected assist request to parent")
+	}
+	upHdr := parent.sent[0].hdr
+	if upHdr == nil || upHdr.GetMsgID() == 0 {
+		t.Fatalf("expected upstream assist header msg_id to be set")
+	}
 	respMsg := mustJSON(map[string]any{
 		"action": "assist_set_resp",
 		"data":   map[string]any{"code": 3, "name": "secret", "owner": 10},
 	})
-	respHdr := (&header.HeaderTcp{}).WithMajor(header.MajorCmd).WithSubProto(3).WithSourceID(99).WithTargetID(1)
-	h.OnReceive(ctx, unauth, respHdr, respMsg)
+	respHdr := (&header.HeaderTcp{}).
+		WithMajor(header.MajorCmd).
+		WithSubProto(3).
+		WithSourceID(20).
+		WithTargetID(1).
+		WithMsgID(upHdr.GetMsgID()).
+		WithTraceID(upHdr.GetTraceID())
+	h.OnReceive(ctx, parent, respHdr, respMsg)
 
 	if len(unauth.sent) == 0 {
 		t.Fatalf("expected resp for unauthorized writer")

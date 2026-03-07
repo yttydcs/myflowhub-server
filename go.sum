@@ -2,16 +2,12 @@ github.com/yttydcs/myflowhub-core v0.2.1 h1:od6Av+lnccUUBYaq+rzR+B/Ycriw+hy917zS
 github.com/yttydcs/myflowhub-core v0.2.1/go.mod h1:uUmSQZ3JVVitpQVXA8goupbXpSbd+rahFZjx5x/rS/4=
 github.com/yttydcs/myflowhub-proto v0.1.1 h1:0oVHnHaYbrV6CWQ0mREWMwDDkkUBIpPMTtLw2TjJLY8=
 github.com/yttydcs/myflowhub-proto v0.1.1/go.mod h1:1shJnnAYNZYd1KnGNtvgdygTaeCyx5duMnxrRLRouOc=
-github.com/yttydcs/myflowhub-subproto/auth v0.1.0 h1:G3Osup32dDAIIZl44nxifhmskTj736RAxQsT8dJN1VI=
-github.com/yttydcs/myflowhub-subproto/auth v0.1.0/go.mod h1:1uc7ye9400zNwOrn9T9lTRCl4j75BcFGZZu63RPIsNQ=
 github.com/yttydcs/myflowhub-subproto/auth v0.1.1 h1:+8kC0SpiWDzcx8ar/rQsZQn0Ac47rPiWfqYTC3zyqBU=
 github.com/yttydcs/myflowhub-subproto/auth v0.1.1/go.mod h1:1uc7ye9400zNwOrn9T9lTRCl4j75BcFGZZu63RPIsNQ=
 github.com/yttydcs/myflowhub-subproto/broker v0.1.0 h1:YnNJ4kMmyl4WgL1o/1X6r54wv8Huamga1Z4yL9gkRgA=
 github.com/yttydcs/myflowhub-subproto/broker v0.1.0/go.mod h1:ZN/xyR7HTixZRC2QeiRjqg69TCkxk+Cyr1+WKTFjnPs=
 github.com/yttydcs/myflowhub-subproto/exec v0.1.0 h1:DhJV3uZHQhLNd/TUgMBJAww/SlWxB64XxyfIgX3LESQ=
 github.com/yttydcs/myflowhub-subproto/exec v0.1.0/go.mod h1:XXHzcLDK1i/L2HUtHzvcG9mXZMGftKugpHVeHx7pdyY=
-github.com/yttydcs/myflowhub-subproto/file v0.1.1 h1:wHl2EboNWn7TEq4jml/GjOXrQGH/ZOqSSLRg62RRW98=
-github.com/yttydcs/myflowhub-subproto/file v0.1.1/go.mod h1:xJylGTme6kKXL5ypPGQYzklpH5p3ev2vkaAZB/aFMQU=
 github.com/yttydcs/myflowhub-subproto/file v0.1.2 h1:BB6VV1JG5XHbg5+CJsiqJY7Tv4KHHZnpdGc/kGQ71Pc=
 github.com/yttydcs/myflowhub-subproto/file v0.1.2/go.mod h1:xJylGTme6kKXL5ypPGQYzklpH5p3ev2vkaAZB/aFMQU=
 github.com/yttydcs/myflowhub-subproto/flow v0.1.0 h1:ARj25BVElGEskV2qqDJE3jj1A9pbR2ax/aWalh9tLBQ=
@@ -22,7 +18,5 @@ github.com/yttydcs/myflowhub-subproto/management v0.1.2 h1:NpXnV7d/fa/eh9h1msNgm
 github.com/yttydcs/myflowhub-subproto/management v0.1.2/go.mod h1:FoFJ6iZXqGskLpj47IMFmrevjsqMm07ZdL2L8f/sswA=
 github.com/yttydcs/myflowhub-subproto/topicbus v0.1.0 h1:XEdWUEZKRyMKA3GgGkXiG0Ud/Ka4UveHLLINcwkK62E=
 github.com/yttydcs/myflowhub-subproto/topicbus v0.1.0/go.mod h1:MNxqkxxnDS/1AsEFJKm55ztlLEDksPN/P4vyKQw786Q=
-github.com/yttydcs/myflowhub-subproto/varstore v0.1.0 h1:eRXNj8FO6Tk6LHEO40VMA8Aji7U4OFIpaC41Yuv8uJg=
-github.com/yttydcs/myflowhub-subproto/varstore v0.1.0/go.mod h1:xdlI8kdB1qL2FEVLyCiEBAgv7PGcpstWP516xT9U3TA=
-github.com/yttydcs/myflowhub-subproto/varstore v0.1.1 h1:XJ1Nx+cozTtI3gNbgoC5W25Sqaq7xve9ZAuM1lQWTN8=
-github.com/yttydcs/myflowhub-subproto/varstore v0.1.1/go.mod h1:xdlI8kdB1qL2FEVLyCiEBAgv7PGcpstWP516xT9U3TA=
+github.com/yttydcs/myflowhub-subproto/varstore v0.1.2 h1:v8aaRF05FV8/CwyUHcmshU6d0ejJ4dEJogW1vd+vz80=
+github.com/yttydcs/myflowhub-subproto/varstore v0.1.2/go.mod h1:xdlI8kdB1qL2FEVLyCiEBAgv7PGcpstWP516xT9U3TA=
