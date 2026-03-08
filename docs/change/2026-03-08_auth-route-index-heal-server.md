@@ -4,6 +4,8 @@
 
 多 hop 场景出现回归：Root Hub 因 `sourceMismatch` 丢弃后代节点帧，导致上层能力（典型是 VarStore `list/get`）返回 `not found (code=4)`。
 
+改动规模：较大（升级 Auth 关键依赖并修订规范文档，影响 Root/Hub 的路由索引建立与安全门禁链路）。
+
 本次目标：
 - 升级 Server 依赖的 `myflowhub-subproto/auth` 到 `v0.1.2`（修复公钥毒化 + up_login 自愈）；
 - 同步更新 `docs/2-auth.md`，避免继续误导旧行为。
@@ -54,4 +56,3 @@ go test ./... -count=1 -p 1
 ## 回滚方案
 - 回退本仓 `go.mod/go.sum` 中 `myflowhub-subproto/auth` 版本至 `v0.1.1` 并重新发布；
 - 或发布后续 Server patch 修正。
-
