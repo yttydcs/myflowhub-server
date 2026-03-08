@@ -20,12 +20,12 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - 信任/白名单：`config/trusted_nodes.json`
   - `bindings`: device_id -> `{node_id,pubkey,role,perms}`，注入 whitelist。
   - `meta`: 预留。
- 读取时注入 whitelist 与 trusted 节点公钥；持久化时同步写回缺失的 trusted 公钥。
+ 读取时注入 whitelist 与 trusted 节点公钥；持久化时同步写回缺失的 trusted 公钥（`auth.disable_persist=true` 时不读写该文件）。
 
 动作与数据字段
 -------------
 - register / assist_register  
-  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`（缺省 pubkey 会填本节点公钥）。  
+  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`（pubkey 可选；缺省不会自动填充，也不会写入 trusted/binding 公钥）。  
   - resp: `{"code","msg,omitempty","device_id","node_id","hub_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`
 - login / assist_login  
   - req: `{"device_id","node_id,omitempty","ts","nonce","sig","alg"}`，需 ES256 签名。  
@@ -35,7 +35,13 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - resp: `{"code","msg,omitempty","device_id","node_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty"}`
 - up_login / up_login_resp  
   - req: `upLoginData` 字段：`node_id,device_id,hub_id,pubkey,ts,nonce,device_ts,device_nonce,device_sig,device_alg,sender_id,sender_ts,sender_nonce,sender_sig,sender_alg,sender_pub,alg`。  
-  - 校验：设备签名有效；发送节点签名有效且为信任节点或携带合法公钥；路由公钥冲突则拒绝。
+  - 校验：
+    - 设备签名有效；
+    - sender 签名优先用 trusted sender 公钥验签；
+    - 若验签失败且请求携带 `sender_pub`，则仅在满足约束 `sender_id == hdr.SourceID == conn.meta(nodeID)` 下允许用 `sender_pub` 二次验签；
+      - 二次验签成功：自愈 trusted/binding 公钥并继续写入路由索引；
+      - 否则：拒绝处理；
+    - 路由公钥冲突则拒绝。
 - revoke  
   - req: `{"device_id","node_id,omitempty"}`；需权限 `auth.revoke`。  
   - resp: 仅删除命中时回 `{"code":1,"device_id","node_id"}`；否则静默。向上下行广播同一动作（除来源）。
@@ -49,7 +55,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 
 核心流程
 --------
-- 注册：本地权威或 assist_register 上送权威分配 node_id；保存 whitelist/路由/信任公钥，返回 register_resp/assist_register_resp。
+- 注册：本地权威或 assist_register 上送权威分配 node_id；保存 whitelist/路由；仅当请求携带 pubkey 时才写入 trusted/binding 公钥，返回 register_resp/assist_register_resp。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
 - 权限：角色/权限来自配置与白名单；perms_invalidate 清缓存并可刷新；perms_snapshot 应用后广播下行。
 - 撤销：校验权限→删除绑定→回 resp（仅命中）→广播 revoke 上下行。
@@ -80,4 +86,4 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 --------
 - Target=0 只向子节点广播，不会上送父；上送权威必须写明目标 NodeID。
 - 登录/注册均需 P256 DER 公钥 + ES256 签名；缺公钥先用 assist_query_credential 获取。
-- 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。**
+- 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。
