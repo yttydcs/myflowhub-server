@@ -28,7 +28,7 @@
 ## 3.1) 计划拆分（Checklist）
 
 ### SRVDEP0 - 归档旧 plan（已执行）
-- 已执行：`git mv plan.md docs/plan_archive/plan_archive_2026-03-12_bump-core-v0.3.0-prev.md`
+- 已执行：`git mv plan.md docs/plan_archive/plan_archive_2026-03-12_bump-core-v0.3.0-server-prev.md`
 
 ### SRVDEP1 - 升级 Core 依赖到 v0.3.0
 - 目标：`go.mod` 中 `github.com/yttydcs/myflowhub-core` 从 `v0.2.1` 升级到 `v0.3.0`。
@@ -42,8 +42,7 @@
   - `GOWORK=off go test ./... -count=1 -p 1`
 
 ### SRVDEP3 - Code Review + 归档变更
-- 输出：`docs/change/2026-03-12_bump-core-v0.3.0.md`
+- 输出：`docs/change/2026-03-12_bump-core-v0.3.0-server.md`
 
 ### SRVDEP4 - 合并 / push（需 workflow 结束后执行）
 - 在 `repo/MyFlowHub-Server` 合并到 `main` 并 push。
-
