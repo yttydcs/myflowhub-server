@@ -22,9 +22,14 @@ type Options struct {
 	Addr      string
 
 	// Bluetooth Classic (RFCOMM/SPP-style byte stream) listener config.
-	// NOTE: Transport implementation is deferred in this workflow; fields are reserved for future wiring.
+	// NOTE:
+	// - RFCOMM is a byte-stream transport (similar to TCP), suitable to carry MyFlowHub frames.
+	// - Channel=0 means "auto/UUID-first" (platform will resolve/assign channel via SDP when supported).
 	RFCOMMEnable bool
 	RFCOMMUUID   string
+	RFCOMMChannel int
+	RFCOMMAdapter string
+	RFCOMMInsecure bool
 
 	// NodeID is the local node id for this hub. If ParentEnable and SelfID are set,
 	// runtime may self-register against parent and override NodeID to match parent assignment.
@@ -78,6 +83,9 @@ func DefaultOptionsFromEnv() Options {
 		RFCOMMEnable: core.ParseBool(getenv("HUB_RFCOMM_ENABLE", "false"), false),
 		// Default UUID (MyFlowHub)
 		RFCOMMUUID: getenv("HUB_RFCOMM_UUID", "0eef65b8-9374-42ea-b992-6ee2d0699f5c"),
+		RFCOMMChannel: int(getenvInt("HUB_RFCOMM_CHANNEL", 0)),
+		RFCOMMAdapter: getenv("HUB_RFCOMM_ADAPTER", "hci0"),
+		RFCOMMInsecure: core.ParseBool(getenv("HUB_RFCOMM_INSECURE", "false"), false),
 
 		ProcChannels: int(getenvInt("HUB_PROC_CHANNELS", 4)),
 		ProcWorkers:  int(getenvInt("HUB_PROC_WORKERS", 8)),
@@ -117,6 +125,13 @@ func (o *Options) Normalize() {
 		o.ParentReconnectSec = 0
 	}
 	o.RFCOMMUUID = strings.TrimSpace(o.RFCOMMUUID)
+	o.RFCOMMAdapter = strings.TrimSpace(o.RFCOMMAdapter)
+	if o.RFCOMMChannel < 0 {
+		o.RFCOMMChannel = 0
+	}
+	if o.RFCOMMEnable && o.RFCOMMAdapter == "" {
+		o.RFCOMMAdapter = "hci0"
+	}
 	o.AuthDefaultRole = strings.TrimSpace(o.AuthDefaultRole)
 	o.AuthDefaultPerms = strings.TrimSpace(o.AuthDefaultPerms)
 	o.AuthNodeRoles = strings.TrimSpace(o.AuthNodeRoles)

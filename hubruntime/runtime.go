@@ -21,6 +21,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/listener/multi_listener"
+	"github.com/yttydcs/myflowhub-core/listener/rfcomm_listener"
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
@@ -103,16 +104,22 @@ func (r *Runtime) Start(ctx context.Context) error {
 	parentTarget := effectiveParentTarget(opts)
 
 	// Pre-start: if parent enabled and self id provided, self-register to obtain/confirm node id.
+	parentScheme := ""
+	parentTCPAddr := ""
 	if opts.ParentEnable && parentTarget != "" {
-		if _, err := normalizeTCPAddr(parentTarget); err != nil {
+		scheme, tcpAddr, err := parseParentEndpoint(parentTarget)
+		if err != nil {
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
 			return err
 		}
+		parentScheme = scheme
+		parentTCPAddr = tcpAddr
 	}
 	if opts.ParentEnable && parentTarget != "" && opts.SelfID != "" {
-		parentTCPAddr, err := normalizeTCPAddr(parentTarget)
-		if err != nil {
+		// Current bootstrap (SelfRegister) is TCP-only; keep behavior explicit.
+		if parentScheme != "tcp" {
+			err := fmt.Errorf("self-id bootstrap only supports tcp parent endpoint (got %s)", parentScheme)
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
 			return err
@@ -162,10 +169,13 @@ func (r *Runtime) Start(ctx context.Context) error {
 		}))
 	}
 	if opts.RFCOMMEnable {
-		err := errors.New("rfcomm listener not implemented in this build")
-		_ = r.restoreWorkDir()
-		r.storeErr(err)
-		return err
+		listeners = append(listeners, rfcomm_listener.New(rfcomm_listener.Options{
+			UUID:     opts.RFCOMMUUID,
+			Channel:  opts.RFCOMMChannel,
+			Adapter:  opts.RFCOMMAdapter,
+			Insecure: opts.RFCOMMInsecure,
+			Logger:   log,
+		}))
 	}
 	if len(listeners) == 0 {
 		err := errors.New("no listener enabled")
@@ -532,40 +542,55 @@ func effectiveParentTarget(opts Options) string {
 	return strings.TrimSpace(opts.ParentAddr)
 }
 
-func normalizeTCPAddr(target string) (string, error) {
+func parseParentEndpoint(target string) (scheme string, tcpAddr string, err error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
-		return "", errors.New("parent target empty")
+		return "", "", errors.New("parent target empty")
 	}
 	// Backward compatible: host:port implies TCP.
 	if !strings.Contains(target, "://") {
-		return target, nil
+		return "tcp", target, nil
 	}
 	u, err := url.Parse(target)
 	if err != nil {
-		return "", fmt.Errorf("parse parent endpoint: %w", err)
+		return "", "", fmt.Errorf("parse parent endpoint: %w", err)
 	}
-	if strings.ToLower(strings.TrimSpace(u.Scheme)) != "tcp" {
-		return "", fmt.Errorf("unsupported parent endpoint scheme: %s", u.Scheme)
+	scheme = strings.ToLower(strings.TrimSpace(u.Scheme))
+	switch scheme {
+	case "tcp":
+		host := strings.TrimSpace(u.Host)
+		if host == "" {
+			return "", "", errors.New("tcp endpoint host is empty")
+		}
+		return "tcp", host, nil
+	case rfcomm_listener.EndpointSchemeRFCOMM:
+		if _, err := rfcomm_listener.ParseEndpoint(target); err != nil {
+			return "", "", err
+		}
+		return scheme, "", nil
+	default:
+		return "", "", fmt.Errorf("unsupported parent endpoint scheme: %s", scheme)
 	}
-	host := strings.TrimSpace(u.Host)
-	if host == "" {
-		return "", errors.New("tcp endpoint host is empty")
-	}
-	return host, nil
 }
 
 func dialParentEndpoint(ctx context.Context, target string) (core.IConnection, error) {
-	addr, err := normalizeTCPAddr(target)
+	scheme, tcpAddr, err := parseParentEndpoint(target)
 	if err != nil {
 		return nil, err
 	}
-	var d net.Dialer
-	raw, err := d.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return nil, err
+	switch scheme {
+	case "tcp":
+		var d net.Dialer
+		raw, err := d.DialContext(ctx, "tcp", tcpAddr)
+		if err != nil {
+			return nil, err
+		}
+		return tcp_listener.NewTCPConnection(raw), nil
+	case rfcomm_listener.EndpointSchemeRFCOMM:
+		return rfcomm_listener.DialEndpoint(ctx, target)
+	default:
+		return nil, fmt.Errorf("unsupported parent endpoint scheme: %s", scheme)
 	}
-	return tcp_listener.NewTCPConnection(raw), nil
 }
 
 func (r *Runtime) storeErr(err error) {
