@@ -20,6 +20,7 @@ type mockConnection struct {
 var _ core.IConnection = (*mockConnection)(nil)
 
 func (m *mockConnection) ID() string                    { return m.id }
+func (m *mockConnection) Pipe() core.IPipe              { return nopPipe{} }
 func (m *mockConnection) Close() error                  { return nil }
 func (m *mockConnection) OnReceive(core.ReceiveHandler) {}
 func (m *mockConnection) SetMeta(k string, v any) {
@@ -41,6 +42,5 @@ func (m *mockConnection) RemoteAddr() net.Addr                                  
 func (m *mockConnection) Reader() core.IReader                                         { return nil }
 func (m *mockConnection) SetReader(core.IReader)                                       {}
 func (m *mockConnection) DispatchReceive(core.IHeader, []byte)                         {}
-func (m *mockConnection) RawConn() net.Conn                                            { return nil }
 func (m *mockConnection) Send([]byte) error                                            { return nil }
 func (m *mockConnection) SendWithHeader(core.IHeader, []byte, core.IHeaderCodec) error { return nil }

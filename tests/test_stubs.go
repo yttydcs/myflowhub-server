@@ -58,7 +58,8 @@ func newStubConn(id string) *stubConn {
 	return &stubConn{id: id, meta: make(map[string]any)}
 }
 
-func (c *stubConn) ID() string { return c.id }
+func (c *stubConn) ID() string       { return c.id }
+func (c *stubConn) Pipe() core.IPipe { return nopPipe{} }
 func (c *stubConn) Close() error {
 	return nil
 }
@@ -74,7 +75,6 @@ func (c *stubConn) RemoteAddr() net.Addr                 { return mockAddr{} }
 func (c *stubConn) Reader() core.IReader                 { return nil }
 func (c *stubConn) SetReader(core.IReader)               {}
 func (c *stubConn) DispatchReceive(core.IHeader, []byte) {}
-func (c *stubConn) RawConn() net.Conn                    { return nil }
 func (c *stubConn) Send([]byte) error                    { return nil }
 func (c *stubConn) SendWithHeader(core.IHeader, []byte, core.IHeaderCodec) error {
 	return nil

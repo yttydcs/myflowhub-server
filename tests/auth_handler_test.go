@@ -598,6 +598,7 @@ func newAuthConn(id string) *authConn {
 }
 
 func (c *authConn) ID() string                           { return c.id }
+func (c *authConn) Pipe() core.IPipe                     { return nopPipe{} }
 func (c *authConn) Close() error                         { return nil }
 func (c *authConn) OnReceive(core.ReceiveHandler)        {}
 func (c *authConn) SetMeta(key string, val any)          { c.meta[key] = val }
@@ -608,7 +609,6 @@ func (c *authConn) RemoteAddr() net.Addr                 { return mockAddr{} }
 func (c *authConn) Reader() core.IReader                 { return nil }
 func (c *authConn) SetReader(core.IReader)               {}
 func (c *authConn) DispatchReceive(core.IHeader, []byte) {}
-func (c *authConn) RawConn() net.Conn                    { return nil }
 func (c *authConn) Send([]byte) error                    { return nil }
 func (c *authConn) SendWithHeader(h core.IHeader, payload []byte, _ core.IHeaderCodec) error {
 	c.sent = append(c.sent, sentFrame{hdr: h, payload: payload})

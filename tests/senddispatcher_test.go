@@ -18,6 +18,7 @@ type pipeConn struct {
 }
 
 func (p *pipeConn) ID() string                                                   { return p.id }
+func (p *pipeConn) Pipe() core.IPipe                                             { return p.conn }
 func (p *pipeConn) Close() error                                                 { return p.conn.Close() }
 func (p *pipeConn) OnReceive(core.ReceiveHandler)                                {}
 func (p *pipeConn) SetMeta(string, any)                                          {}
@@ -28,7 +29,6 @@ func (p *pipeConn) RemoteAddr() net.Addr                                        
 func (p *pipeConn) Reader() core.IReader                                         { return nil }
 func (p *pipeConn) SetReader(core.IReader)                                       {}
 func (p *pipeConn) DispatchReceive(core.IHeader, []byte)                         {}
-func (p *pipeConn) RawConn() net.Conn                                            { return p.conn }
 func (p *pipeConn) Send([]byte) error                                            { return nil }
 func (p *pipeConn) SendWithHeader(core.IHeader, []byte, core.IHeaderCodec) error { return nil }
 

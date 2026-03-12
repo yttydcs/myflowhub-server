@@ -61,6 +61,7 @@ func TestRootHubPing(t *testing.T) {
 
 	// Hub: start via hubruntime (self-register + parent bootstrap).
 	rt, err := hubruntime.New(hubruntime.Options{
+		TCPEnable:    true,
 		Addr:         hubAddr,
 		NodeID:       0,
 		ParentAddr:   rootAddr,
