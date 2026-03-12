@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
+	"github.com/yttydcs/myflowhub-core/listener/multi_listener"
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
 	"github.com/yttydcs/myflowhub-core/server"
@@ -62,8 +65,11 @@ type Runtime struct {
 
 func New(opts Options) (*Runtime, error) {
 	opts.Normalize()
-	if strings.TrimSpace(opts.Addr) == "" {
-		return nil, errors.New("addr required")
+	if !opts.TCPEnable && !opts.RFCOMMEnable {
+		return nil, errors.New("no listener enabled")
+	}
+	if opts.TCPEnable && strings.TrimSpace(opts.Addr) == "" {
+		return nil, errors.New("tcp addr required")
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
@@ -94,9 +100,24 @@ func (r *Runtime) Start(ctx context.Context) error {
 		opts.WorkDir = normalizedWorkDir
 	}
 
+	parentTarget := effectiveParentTarget(opts)
+
 	// Pre-start: if parent enabled and self id provided, self-register to obtain/confirm node id.
-	if opts.ParentEnable && opts.ParentAddr != "" && opts.SelfID != "" {
-		nodeID, err := selfRegisterNodeID(ctx, opts.ParentAddr, opts.SelfID, log)
+	if opts.ParentEnable && parentTarget != "" {
+		if _, err := normalizeTCPAddr(parentTarget); err != nil {
+			_ = r.restoreWorkDir()
+			r.storeErr(err)
+			return err
+		}
+	}
+	if opts.ParentEnable && parentTarget != "" && opts.SelfID != "" {
+		parentTCPAddr, err := normalizeTCPAddr(parentTarget)
+		if err != nil {
+			_ = r.restoreWorkDir()
+			r.storeErr(err)
+			return err
+		}
+		nodeID, err := selfRegisterNodeID(ctx, parentTCPAddr, opts.SelfID, log)
 		if err != nil {
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
@@ -132,22 +153,51 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 
-	lst := tcp_listener.New(opts.Addr, tcp_listener.Options{
-		KeepAlive:       true,
-		KeepAlivePeriod: 30 * time.Second,
-		Logger:          log,
-	})
+	listeners := make([]core.IListener, 0, 2)
+	if opts.TCPEnable {
+		listeners = append(listeners, tcp_listener.New(opts.Addr, tcp_listener.Options{
+			KeepAlive:       true,
+			KeepAlivePeriod: 30 * time.Second,
+			Logger:          log,
+		}))
+	}
+	if opts.RFCOMMEnable {
+		err := errors.New("rfcomm listener not implemented in this build")
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
+	}
+	if len(listeners) == 0 {
+		err := errors.New("no listener enabled")
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
+	}
+
+	var lst core.IListener
+	if len(listeners) == 1 {
+		lst = listeners[0]
+	} else {
+		ml, err := multi_listener.New(listeners...)
+		if err != nil {
+			_ = r.restoreWorkDir()
+			r.storeErr(err)
+			return err
+		}
+		lst = ml
+	}
 	codec := header.HeaderTcpCodec{}
 
 	srv, err := server.New(server.Options{
-		Name:     "HubServer",
-		Logger:   log,
-		Process:  dispatcher,
-		Codec:    codec,
-		Listener: lst,
-		Config:   cfg,
-		Manager:  cm,
-		NodeID:   opts.NodeID,
+		Name:         "HubServer",
+		Logger:       log,
+		Process:      dispatcher,
+		Codec:        codec,
+		Listener:     lst,
+		Config:       cfg,
+		Manager:      cm,
+		ParentDialer: dialParentEndpoint,
+		NodeID:       opts.NodeID,
 	})
 	if err != nil {
 		_ = r.restoreWorkDir()
@@ -181,10 +231,10 @@ func (r *Runtime) Start(ctx context.Context) error {
 	r.mu.Unlock()
 
 	// Post-start: bind parent connection (root side) by sending an auth register on the persistent parent link.
-	if opts.ParentEnable && opts.ParentAddr != "" {
+	if opts.ParentEnable && parentTarget != "" {
 		r.startParentBootstrapWatcher()
 	}
-	log.Info("hub runtime started", "addr", opts.Addr, "node_id", opts.NodeID, "parent", opts.ParentAddr)
+	log.Info("hub runtime started", "addr", opts.Addr, "node_id", opts.NodeID, "parent", parentTarget)
 	return nil
 }
 
@@ -229,7 +279,7 @@ func (r *Runtime) Status() Status {
 		Addr:          opts.Addr,
 		NodeID:        opts.NodeID,
 		ParentEnabled: opts.ParentEnable,
-		ParentAddr:    opts.ParentAddr,
+		ParentAddr:    effectiveParentTarget(opts),
 		WorkDir:       opts.WorkDir,
 		LastError:     r.loadErr(),
 	}
@@ -442,9 +492,10 @@ func buildConfig(opts Options) core.IConfig {
 	if opts.ParentReconnectSec > 0 {
 		reconnect = fmt.Sprintf("%d", opts.ParentReconnectSec)
 	}
+	parentTarget := effectiveParentTarget(opts)
 	data := map[string]string{
 		"addr":                           opts.Addr,
-		coreconfig.KeyParentAddr:         opts.ParentAddr,
+		coreconfig.KeyParentAddr:         parentTarget,
 		coreconfig.KeyParentEnable:       boolString(opts.ParentEnable),
 		coreconfig.KeyParentReconnectSec: reconnect,
 
@@ -472,6 +523,49 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func effectiveParentTarget(opts Options) string {
+	if strings.TrimSpace(opts.ParentEndpoint) != "" {
+		return strings.TrimSpace(opts.ParentEndpoint)
+	}
+	return strings.TrimSpace(opts.ParentAddr)
+}
+
+func normalizeTCPAddr(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", errors.New("parent target empty")
+	}
+	// Backward compatible: host:port implies TCP.
+	if !strings.Contains(target, "://") {
+		return target, nil
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return "", fmt.Errorf("parse parent endpoint: %w", err)
+	}
+	if strings.ToLower(strings.TrimSpace(u.Scheme)) != "tcp" {
+		return "", fmt.Errorf("unsupported parent endpoint scheme: %s", u.Scheme)
+	}
+	host := strings.TrimSpace(u.Host)
+	if host == "" {
+		return "", errors.New("tcp endpoint host is empty")
+	}
+	return host, nil
+}
+
+func dialParentEndpoint(ctx context.Context, target string) (core.IConnection, error) {
+	addr, err := normalizeTCPAddr(target)
+	if err != nil {
+		return nil, err
+	}
+	var d net.Dialer
+	raw, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return tcp_listener.NewTCPConnection(raw), nil
 }
 
 func (r *Runtime) storeErr(err error) {

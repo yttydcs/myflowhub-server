@@ -31,6 +31,7 @@ func newRecordConn(id string) *recordConn {
 }
 
 func (c *recordConn) ID() string                           { return c.id }
+func (c *recordConn) Pipe() core.IPipe                     { return nopPipe{} }
 func (c *recordConn) Close() error                         { return nil }
 func (c *recordConn) OnReceive(core.ReceiveHandler)        {}
 func (c *recordConn) SetMeta(key string, val any)          { c.meta[key] = val }
@@ -41,7 +42,6 @@ func (c *recordConn) RemoteAddr() net.Addr                 { return c.addr }
 func (c *recordConn) Reader() core.IReader                 { return nil }
 func (c *recordConn) SetReader(core.IReader)               {}
 func (c *recordConn) DispatchReceive(core.IHeader, []byte) {}
-func (c *recordConn) RawConn() net.Conn                    { return nil }
 func (c *recordConn) Send(data []byte) error {
 	c.sent = append(c.sent, sentFrame{payload: data})
 	return nil

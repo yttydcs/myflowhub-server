@@ -15,13 +15,24 @@ import (
 // - Keep this struct gomobile-friendly (basic types only) to simplify future binding.
 // - Fields are intentionally aligned with cmd/hub_server flags/env to avoid drift.
 type Options struct {
-	Addr string
+	// Listener toggles (restart required to take effect).
+	//
+	// TCP remains the default transport in v1.
+	TCPEnable bool
+	Addr      string
+
+	// Bluetooth Classic (RFCOMM/SPP-style byte stream) listener config.
+	// NOTE: Transport implementation is deferred in this workflow; fields are reserved for future wiring.
+	RFCOMMEnable bool
+	RFCOMMUUID   string
 
 	// NodeID is the local node id for this hub. If ParentEnable and SelfID are set,
 	// runtime may self-register against parent and override NodeID to match parent assignment.
 	NodeID uint32
 
 	// Parent link
+	// ParentEndpoint supports scheme prefixes like: tcp://127.0.0.1:9000 (future: bt+rfcomm://...).
+	ParentEndpoint     string
 	ParentAddr         string
 	ParentEnable       bool
 	ParentReconnectSec int
@@ -56,11 +67,17 @@ type Options struct {
 
 func DefaultOptionsFromEnv() Options {
 	return Options{
+		TCPEnable:          core.ParseBool(getenv("HUB_TCP_ENABLE", "true"), true),
 		Addr:               getenv("HUB_ADDR", ":9000"),
 		NodeID:             getenvUint32("HUB_NODE_ID", 1),
+		ParentEndpoint:     getenv("HUB_PARENT_ENDPOINT", ""),
 		ParentAddr:         getenv("HUB_PARENT_ADDR", ""),
 		ParentEnable:       core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
 		ParentReconnectSec: int(getenvInt("HUB_PARENT_RECONNECT", 3)),
+
+		RFCOMMEnable: core.ParseBool(getenv("HUB_RFCOMM_ENABLE", "false"), false),
+		// Default UUID (MyFlowHub)
+		RFCOMMUUID: getenv("HUB_RFCOMM_UUID", "0eef65b8-9374-42ea-b992-6ee2d0699f5c"),
 
 		ProcChannels: int(getenvInt("HUB_PROC_CHANNELS", 4)),
 		ProcWorkers:  int(getenvInt("HUB_PROC_WORKERS", 8)),
@@ -86,15 +103,20 @@ func (o *Options) Normalize() {
 	if o == nil {
 		return
 	}
-	if strings.TrimSpace(o.ParentAddr) != "" {
+	if strings.TrimSpace(o.ParentEndpoint) != "" || strings.TrimSpace(o.ParentAddr) != "" {
 		o.ParentEnable = true
 	}
-	if strings.TrimSpace(o.Addr) == "" {
+	o.Addr = strings.TrimSpace(o.Addr)
+	o.ParentEndpoint = strings.TrimSpace(o.ParentEndpoint)
+	o.ParentAddr = strings.TrimSpace(o.ParentAddr)
+
+	if o.TCPEnable && strings.TrimSpace(o.Addr) == "" {
 		o.Addr = ":9000"
 	}
 	if o.ParentReconnectSec < 0 {
 		o.ParentReconnectSec = 0
 	}
+	o.RFCOMMUUID = strings.TrimSpace(o.RFCOMMUUID)
 	o.AuthDefaultRole = strings.TrimSpace(o.AuthDefaultRole)
 	o.AuthDefaultPerms = strings.TrimSpace(o.AuthDefaultPerms)
 	o.AuthNodeRoles = strings.TrimSpace(o.AuthNodeRoles)
