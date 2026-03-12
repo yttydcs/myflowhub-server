@@ -1,5 +1,7 @@
 # Server：多 Listener 开关 + ParentEndpoint（适配 Core Pipe，为 RFCOMM 接入预留配置骨架）
 
+> **重大变更（因依赖 Core Breaking Change）**：本次适配了 Core 的 `Pipe()` 抽象；若以 `GOWORK=off` 构建/测试，需要升级 Core 版本（建议 `v0.3.0`）。
+
 ## 变更背景 / 目标
 现状（变更前）：
 - `hubruntime` 只能启动一个 TCP listener，无法同时启用多个协议入口。
@@ -53,4 +55,3 @@
   - 恢复单 TCP listener 装配；
   - 移除 `ParentEndpoint`/dialer 注入，回退到旧的 `ParentAddr` 语义；
   - tests stub/mock 同步回滚到 `RawConn()` 版本（需同时回滚 Core）。
-
