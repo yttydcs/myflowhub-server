@@ -21,6 +21,7 @@ import (
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/listener/multi_listener"
+	"github.com/yttydcs/myflowhub-core/listener/quic_listener"
 	"github.com/yttydcs/myflowhub-core/listener/rfcomm_listener"
 	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 	"github.com/yttydcs/myflowhub-core/process"
@@ -66,11 +67,14 @@ type Runtime struct {
 
 func New(opts Options) (*Runtime, error) {
 	opts.Normalize()
-	if !opts.TCPEnable && !opts.RFCOMMEnable {
+	if !opts.TCPEnable && !opts.RFCOMMEnable && !opts.QUICEnable {
 		return nil, errors.New("no listener enabled")
 	}
 	if opts.TCPEnable && strings.TrimSpace(opts.Addr) == "" {
 		return nil, errors.New("tcp addr required")
+	}
+	if opts.QUICEnable && strings.TrimSpace(opts.QUICAddr) == "" {
+		return nil, errors.New("quic addr required")
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
@@ -160,12 +164,23 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 
-	listeners := make([]core.IListener, 0, 2)
+	listeners := make([]core.IListener, 0, 3)
 	if opts.TCPEnable {
 		listeners = append(listeners, tcp_listener.New(opts.Addr, tcp_listener.Options{
 			KeepAlive:       true,
 			KeepAlivePeriod: 30 * time.Second,
 			Logger:          log,
+		}))
+	}
+	if opts.QUICEnable {
+		listeners = append(listeners, quic_listener.New(quic_listener.Options{
+			Addr:              opts.QUICAddr,
+			ALPN:              opts.QUICALPN,
+			CertFile:          opts.QUICCertFile,
+			KeyFile:           opts.QUICKeyFile,
+			ClientCAFile:      opts.QUICClientCAFile,
+			RequireClientCert: opts.QUICRequireClientCert,
+			Logger:            log,
 		}))
 	}
 	if opts.RFCOMMEnable {
@@ -568,6 +583,11 @@ func parseParentEndpoint(target string) (scheme string, tcpAddr string, err erro
 			return "", "", err
 		}
 		return scheme, "", nil
+	case quic_listener.EndpointSchemeQUIC:
+		if _, err := quic_listener.ParseEndpoint(target); err != nil {
+			return "", "", err
+		}
+		return scheme, "", nil
 	default:
 		return "", "", fmt.Errorf("unsupported parent endpoint scheme: %s", scheme)
 	}
@@ -588,6 +608,8 @@ func dialParentEndpoint(ctx context.Context, target string) (core.IConnection, e
 		return tcp_listener.NewTCPConnection(raw), nil
 	case rfcomm_listener.EndpointSchemeRFCOMM:
 		return rfcomm_listener.DialEndpoint(ctx, target)
+	case quic_listener.EndpointSchemeQUIC:
+		return quic_listener.DialEndpoint(ctx, target)
 	default:
 		return nil, fmt.Errorf("unsupported parent endpoint scheme: %s", scheme)
 	}
