@@ -65,7 +65,7 @@
 - 回滚点：
   - 回退新增测试文件。
 
-### DEV-CERT-4 - Code Review 与归档（进行中）
+### DEV-CERT-4 - Code Review 与归档（已完成）
 - 目标：输出强制审查结论并归档到 `docs/change`。
 - 涉及模块 / 文件：
   - `docs/change/2026-03-16_server-quic-dev-cert-auto.md`
