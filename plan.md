@@ -78,3 +78,23 @@
 ### SRV-BT6 - 合并 / push（需 workflow 结束后执行）
 - 在 `repo/MyFlowHub-Server` 合并到 `main` 并 push。
 
+---
+
+# Plan - Server：QUIC 开发自动证书（已完成）
+
+## Workflow 信息
+- Repo：`MyFlowHub-Server`
+- 分支：`feat/quic-dev-cert-auto`
+- Worktree：`d:\project\MyFlowHub3\repo\MyFlowHub-Server\worktrees\feat-quic-dev-cert-auto`
+- Base：`main`
+
+## 目标与结果
+- 目标：新增 `-quic-dev-cert-auto`，在开发环境下未提供证书时自动生成自签名证书。
+- 结果：已实现并合并，默认关闭，不影响生产手工证书路径。
+
+## Checklist（完成态）
+- [x] `DEV-CERT-1` 配置面接入（Options + ENV + CLI）
+- [x] `DEV-CERT-2` 自动证书生成与注入（仅 QUIC 开启且证书为空时触发）
+- [x] `DEV-CERT-3` 单测与回归验证
+- [x] `DEV-CERT-4` 归档文档与代码评审
+
