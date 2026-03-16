@@ -104,6 +104,11 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if normalizedWorkDir != "" {
 		opts.WorkDir = normalizedWorkDir
 	}
+	if err := ensureQUICDevCertIfNeeded(&opts, log); err != nil {
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
+	}
 
 	parentTarget := effectiveParentTarget(opts)
 

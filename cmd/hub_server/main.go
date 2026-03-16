@@ -23,6 +23,7 @@ func main() {
 	flag.StringVar(&opts.QUICALPN, "quic-alpn", opts.QUICALPN, "quic ALPN protocol")
 	flag.StringVar(&opts.QUICCertFile, "quic-cert-file", opts.QUICCertFile, "quic tls cert file path")
 	flag.StringVar(&opts.QUICKeyFile, "quic-key-file", opts.QUICKeyFile, "quic tls key file path")
+	flag.BoolVar(&opts.QUICDevCertAuto, "quic-dev-cert-auto", opts.QUICDevCertAuto, "auto-generate self-signed quic cert/key for development when cert/key are missing")
 	flag.StringVar(&opts.QUICClientCAFile, "quic-client-ca-file", opts.QUICClientCAFile, "quic client CA file path")
 	flag.BoolVar(&opts.QUICRequireClientCert, "quic-require-client-cert", opts.QUICRequireClientCert, "require and verify quic client cert")
 	flag.UintVar(&nodeID, "node-id", nodeID, "node id for this hub (0 means auto when parent+self-id enabled)")
