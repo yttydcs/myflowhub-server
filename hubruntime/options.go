@@ -21,14 +21,23 @@ type Options struct {
 	TCPEnable bool
 	Addr      string
 
+	// QUIC listener config (UDP-based, stream semantics).
+	QUICEnable            bool
+	QUICAddr              string
+	QUICALPN              string
+	QUICCertFile          string
+	QUICKeyFile           string
+	QUICClientCAFile      string
+	QUICRequireClientCert bool
+
 	// Bluetooth Classic (RFCOMM/SPP-style byte stream) listener config.
 	// NOTE:
 	// - RFCOMM is a byte-stream transport (similar to TCP), suitable to carry MyFlowHub frames.
 	// - Channel=0 means "auto/UUID-first" (platform will resolve/assign channel via SDP when supported).
-	RFCOMMEnable bool
-	RFCOMMUUID   string
-	RFCOMMChannel int
-	RFCOMMAdapter string
+	RFCOMMEnable   bool
+	RFCOMMUUID     string
+	RFCOMMChannel  int
+	RFCOMMAdapter  string
 	RFCOMMInsecure bool
 
 	// NodeID is the local node id for this hub. If ParentEnable and SelfID are set,
@@ -36,7 +45,10 @@ type Options struct {
 	NodeID uint32
 
 	// Parent link
-	// ParentEndpoint supports scheme prefixes like: tcp://127.0.0.1:9000 (future: bt+rfcomm://...).
+	// ParentEndpoint supports scheme prefixes like:
+	// - tcp://127.0.0.1:9000
+	// - bt+rfcomm://AA:BB:CC:DD:EE:FF?uuid=...
+	// - quic://127.0.0.1:9000?server_name=...&pin_sha256=...
 	ParentEndpoint     string
 	ParentAddr         string
 	ParentEnable       bool
@@ -72,19 +84,26 @@ type Options struct {
 
 func DefaultOptionsFromEnv() Options {
 	return Options{
-		TCPEnable:          core.ParseBool(getenv("HUB_TCP_ENABLE", "true"), true),
-		Addr:               getenv("HUB_ADDR", ":9000"),
-		NodeID:             getenvUint32("HUB_NODE_ID", 1),
-		ParentEndpoint:     getenv("HUB_PARENT_ENDPOINT", ""),
-		ParentAddr:         getenv("HUB_PARENT_ADDR", ""),
-		ParentEnable:       core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
-		ParentReconnectSec: int(getenvInt("HUB_PARENT_RECONNECT", 3)),
+		TCPEnable:             core.ParseBool(getenv("HUB_TCP_ENABLE", "true"), true),
+		Addr:                  getenv("HUB_ADDR", ":9000"),
+		QUICEnable:            core.ParseBool(getenv("HUB_QUIC_ENABLE", "false"), false),
+		QUICAddr:              getenv("HUB_QUIC_ADDR", ":9000"),
+		QUICALPN:              getenv("HUB_QUIC_ALPN", "myflowhub"),
+		QUICCertFile:          getenv("HUB_QUIC_CERT_FILE", ""),
+		QUICKeyFile:           getenv("HUB_QUIC_KEY_FILE", ""),
+		QUICClientCAFile:      getenv("HUB_QUIC_CLIENT_CA_FILE", ""),
+		QUICRequireClientCert: core.ParseBool(getenv("HUB_QUIC_REQUIRE_CLIENT_CERT", "false"), false),
+		NodeID:                getenvUint32("HUB_NODE_ID", 1),
+		ParentEndpoint:        getenv("HUB_PARENT_ENDPOINT", ""),
+		ParentAddr:            getenv("HUB_PARENT_ADDR", ""),
+		ParentEnable:          core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
+		ParentReconnectSec:    int(getenvInt("HUB_PARENT_RECONNECT", 3)),
 
 		RFCOMMEnable: core.ParseBool(getenv("HUB_RFCOMM_ENABLE", "false"), false),
 		// Default UUID (MyFlowHub)
-		RFCOMMUUID: getenv("HUB_RFCOMM_UUID", "0eef65b8-9374-42ea-b992-6ee2d0699f5c"),
-		RFCOMMChannel: int(getenvInt("HUB_RFCOMM_CHANNEL", 0)),
-		RFCOMMAdapter: getenv("HUB_RFCOMM_ADAPTER", "hci0"),
+		RFCOMMUUID:     getenv("HUB_RFCOMM_UUID", "0eef65b8-9374-42ea-b992-6ee2d0699f5c"),
+		RFCOMMChannel:  int(getenvInt("HUB_RFCOMM_CHANNEL", 0)),
+		RFCOMMAdapter:  getenv("HUB_RFCOMM_ADAPTER", "hci0"),
 		RFCOMMInsecure: core.ParseBool(getenv("HUB_RFCOMM_INSECURE", "false"), false),
 
 		ProcChannels: int(getenvInt("HUB_PROC_CHANNELS", 4)),
@@ -115,11 +134,22 @@ func (o *Options) Normalize() {
 		o.ParentEnable = true
 	}
 	o.Addr = strings.TrimSpace(o.Addr)
+	o.QUICAddr = strings.TrimSpace(o.QUICAddr)
+	o.QUICALPN = strings.TrimSpace(o.QUICALPN)
+	o.QUICCertFile = strings.TrimSpace(o.QUICCertFile)
+	o.QUICKeyFile = strings.TrimSpace(o.QUICKeyFile)
+	o.QUICClientCAFile = strings.TrimSpace(o.QUICClientCAFile)
 	o.ParentEndpoint = strings.TrimSpace(o.ParentEndpoint)
 	o.ParentAddr = strings.TrimSpace(o.ParentAddr)
 
 	if o.TCPEnable && strings.TrimSpace(o.Addr) == "" {
 		o.Addr = ":9000"
+	}
+	if o.QUICEnable && strings.TrimSpace(o.QUICAddr) == "" {
+		o.QUICAddr = ":9000"
+	}
+	if o.QUICEnable && strings.TrimSpace(o.QUICALPN) == "" {
+		o.QUICALPN = "myflowhub"
 	}
 	if o.ParentReconnectSec < 0 {
 		o.ParentReconnectSec = 0
