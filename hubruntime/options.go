@@ -27,6 +27,7 @@ type Options struct {
 	QUICALPN              string
 	QUICCertFile          string
 	QUICKeyFile           string
+	QUICDevCertAuto       bool
 	QUICClientCAFile      string
 	QUICRequireClientCert bool
 
@@ -91,6 +92,7 @@ func DefaultOptionsFromEnv() Options {
 		QUICALPN:              getenv("HUB_QUIC_ALPN", "myflowhub"),
 		QUICCertFile:          getenv("HUB_QUIC_CERT_FILE", ""),
 		QUICKeyFile:           getenv("HUB_QUIC_KEY_FILE", ""),
+		QUICDevCertAuto:       core.ParseBool(getenv("HUB_QUIC_DEV_CERT_AUTO", "false"), false),
 		QUICClientCAFile:      getenv("HUB_QUIC_CLIENT_CA_FILE", ""),
 		QUICRequireClientCert: core.ParseBool(getenv("HUB_QUIC_REQUIRE_CLIENT_CERT", "false"), false),
 		NodeID:                getenvUint32("HUB_NODE_ID", 1),
