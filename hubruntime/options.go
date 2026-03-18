@@ -120,8 +120,8 @@ func DefaultOptionsFromEnv() Options {
 		AuthDefaultRole:  getenv("HUB_AUTH_DEFAULT_ROLE", "node"),
 		AuthDefaultPerms: getenv("HUB_AUTH_DEFAULT_PERMS", ""),
 		AuthNodeRoles:    getenv("HUB_AUTH_NODE_ROLES", ""),
-		// 默认给 node 角色开放 file/flow/exec 权限（可用 HUB_AUTH_ROLE_PERMS 覆盖）
-		AuthRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write,flow.set,exec.call"),
+		// 默认给 node 角色开放 file/flow/exec 权限（包含 capability registry/query；可用 HUB_AUTH_ROLE_PERMS 覆盖）
+		AuthRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync"),
 
 		WorkDir: getenv("HUB_WORKDIR", ""),
 		SelfID:  getenv("HUB_SELF_ID", ""),
