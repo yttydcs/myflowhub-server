@@ -10,10 +10,32 @@ const SubProtoExec uint8 = protocol.SubProtoExec
 const (
 	ActionCall     = protocol.ActionCall
 	ActionCallResp = protocol.ActionCallResp
+
+	ActionCapSnapshot  = protocol.ActionCapSnapshot
+	ActionCapUpsert    = protocol.ActionCapUpsert
+	ActionCapWithdraw  = protocol.ActionCapWithdraw
+	ActionCapHeartbeat = protocol.ActionCapHeartbeat
+	ActionCapSyncResp  = protocol.ActionCapSyncResp
+	ActionCapQuery     = protocol.ActionCapQuery
+	ActionCapQueryResp = protocol.ActionCapQueryResp
 )
 
-const PermExecCall = protocol.PermExecCall
+const (
+	PermExecCall     = protocol.PermExecCall
+	PermExecCapSync  = protocol.PermExecCapSync
+	PermExecCapQuery = protocol.PermExecCapQuery
+)
 
 type Message = protocol.Message
 type CallReq = protocol.CallReq
 type CallResp = protocol.CallResp
+type CapabilityDescriptor = protocol.CapabilityDescriptor
+type CapabilityKey = protocol.CapabilityKey
+type CapSnapshotReq = protocol.CapSnapshotReq
+type CapUpsertReq = protocol.CapUpsertReq
+type CapWithdrawReq = protocol.CapWithdrawReq
+type CapHeartbeatReq = protocol.CapHeartbeatReq
+type CapSyncResp = protocol.CapSyncResp
+type CapQueryReq = protocol.CapQueryReq
+type CapabilityRoute = protocol.CapabilityRoute
+type CapQueryResp = protocol.CapQueryResp

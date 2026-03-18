@@ -16,7 +16,9 @@ flow 协议（SubProto=6）规范（草案）
   - `set`：设置/更新工作流（需要权限 `flow.set`）
   - `run`：手动触发一次运行（第一版可选）
   - `status`：查询运行状态（第一版可选）
-- 触发器（第一版）：仅支持**定时触发**（interval）。
+- 触发器（当前）：支持 `interval` / `event` / `var_changed`。
+  - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动，按 `event_mode` + `event_name`/`event_topic` 匹配。
+  - `var_changed`：由 `varstore.changed` 与 `varstore.deleted` 事件驱动，按 `var_owner`/`var_name` 过滤。
 
 权限
 ----
@@ -66,9 +68,18 @@ HeaderTcp 与路由约定
 - `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
 - `flow_id`：UUID（必填）
 - `name`：string（可选）
-- `trigger`：object（必填，第一版仅 interval）
-  - `type`：固定 `"interval"`
-  - `every_ms`：uint64（必填，建议最小 100ms，上层自行限制）
+- `trigger`：object（必填）
+  - `type`：`"interval"` | `"event"` | `"var_changed"`
+  - `interval` 触发：
+    - `every_ms`：uint64（必填，>0）
+  - `event` 触发（匹配 TopicBus 发布事件）：
+    - `event_mode`：`publish` | `received` | `any`（可选，默认 `publish`）
+    - `event_name`：string（可选）
+    - `event_topic`：string（可选）
+    - 约束：`event_name` 与 `event_topic` 不能同时为空
+  - `var_changed` 触发（匹配变量变化/删除事件）：
+    - `var_owner`：uint32（可选，0 表示不过滤 owner）
+    - `var_name`：string（可选，空表示不过滤 name）
 - `graph`：object（必填）
   - `nodes`：array
   - `edges`：array

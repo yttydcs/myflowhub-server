@@ -5,7 +5,7 @@ exec 协议（SubProto=7）规范（草案）
 ----
 - `exec` 子协议用于在网络中调用“特殊能力”（将来可用于插件系统，例如调用第三方服务商 Web API）。
 - **注意**：`exec.call` 不是把 `flow` 交给别的节点执行；`flow` 的执行者永远是接收 `flow.set` 的节点。
-- 权限：仅校验 `exec.call`（动作/方法本身不拆分权限）。
+- 权限：`exec.call`、`exec.cap.sync`、`exec.cap.query` 均可独立校验。
 
 总览
 ----
@@ -13,12 +13,17 @@ exec 协议（SubProto=7）规范（草案）
 - 典型动作：
   - `call`：请求目标节点执行一个已注册的 `namespace::method`
   - `call_resp`：执行结果响应
+  - `cap_snapshot/cap_upsert/cap_withdraw/cap_heartbeat`：能力注册中心逐级同步（草案）
+  - `cap_query/cap_query_resp`：能力发现查询（草案）
 
 权限
 ----
 - 权限节点格式：`协议.action`
-- 第一版固定：
+- 当前固定：
   - `exec.call`：允许“使用网络中的特殊能力”
+  - `exec.cap.sync`：允许能力同步（snapshot/upsert/withdraw/heartbeat）
+  - `exec.cap.query`：允许查询能力聚合索引
+- 默认仍受 auth 默认权限策略影响（若默认 `*` 则等价放开）。
 
 HeaderTcp 与路由约定
 --------------------
@@ -28,6 +33,8 @@ HeaderTcp 与路由约定
 - Major 约定（统一框架规则）：
   - 请求帧（`call`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行/转发）。
   - 响应帧（`call_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发；中间节点不需要进 handler 转发）。
+  - 能力同步请求帧（`cap_*`）：`MajorCmd`（逐级上送/逐级聚合）。
+  - 能力同步响应（`cap_sync_resp`）与查询响应（`cap_query_resp`）：`MajorOKResp`。
   - 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达。
 
 逐级上送与裁决（downstream 判定）
@@ -103,4 +110,56 @@ HeaderTcp 与路由约定
 - `408`：timeout
 - `429`：too many requests（可选，限流）
 - `500`：internal error
+
+能力注册中心（挂载在 exec，逐级注册草案）
+---------------------------------------
+目标：
+- 在不新增 subproto 的前提下，复用 `exec` 承载能力注册中心。
+- 采用“子到父逐级同步 + 父到子树逐级聚合”模型，保证断父后子树自治可用。
+
+核心模型：
+- 每个节点维护：
+  - `local_caps`：本节点自有能力
+  - `child_caps[child]`：每个直连子节点上报的能力快照
+  - `subtree_index`：本节点聚合索引（供本节点/子树查询）
+- 连接断开（`conn.closed`）时清理对应 child 快照，并触发上行增量撤销同步。
+- 子节点重连父节点后，发送 `cap_snapshot`（新 `epoch`）覆盖旧状态。
+
+能力描述（CapabilityDescriptor）：
+- `provider_node`：真正执行 method 的节点
+- `method`：`namespace::method`
+- `version`：能力版本（可选）
+- `input_schema/output_schema`：建议 JSON Schema 子集（可选）
+- `default_timeout_ms`：默认超时（可选）
+- `permissions`：调用该能力的权限集合（可选）
+- `tags`：扩展标签（可选）
+
+同步动作（逐级上送）：
+- `cap_snapshot`：全量上报（用于初次上线/重连）
+  - `req_id? from_node epoch lease_ms caps[]`
+- `cap_upsert`：增量新增/更新
+  - `req_id? from_node epoch lease_ms caps[]`
+- `cap_withdraw`：增量撤销
+  - `req_id? from_node epoch keys[]`
+- `cap_heartbeat`：续租
+  - `req_id? from_node epoch lease_ms`
+- 统一响应 `cap_sync_resp`
+  - `req_id? code msg from_node epoch applied responder_node`
+
+上行发送策略（当前实现）：
+- 首次上行或父节点切换：发送 `cap_snapshot`（全量）
+- 稳态变更：发送 `cap_upsert`/`cap_withdraw`（增量）
+- 无差异：按租约窗口发送 `cap_heartbeat` 续租
+- 若收到父节点 `cap_sync_resp` 且 `code in {404,409}` 或 `>=500`，本节点会清空上行缓存并触发一次全量 `cap_snapshot` 重同步
+
+查询动作（本地优先，必要时上送）：
+- `cap_query`：
+  - `req_id requester_node? method? prefix? provider_node? limit? include_schema?`
+- `cap_query_resp`：
+  - `req_id code msg responder_node total routes[]`
+  - `routes[]` 含 `provider_node`、`via_node`、`method`、`version`、`lease_expire_at` 等字段
+
+与 `call` 的关系：
+- `call` 保持现状（不破坏既有路由与权限语义）。
+- 后续可在 executor 侧先 `cap_query` 再做 provider 选择与 `call` 下发。
 
