@@ -1,100 +1,63 @@
-# Plan - Server：接入 RFCOMM（Bluetooth Classic）Listener + ParentEndpoint Dial
+# Plan - Server Docs：同步 Flow 删除部署协议约定
 
 ## Workflow 信息
 - Repo：`MyFlowHub-Server`
-- 分支：`feat/bluetooth-rfcomm-transport`
-- Worktree：`d:\project\MyFlowHub3\worktrees\feat-bluetooth-rfcomm-transport\repo\MyFlowHub-Server`
-- Base：`main`
-- 依赖仓：
-  - `MyFlowHub-Core`：本分支引入 RFCOMM transport（本 workflow 需联动编译）
-
-## 背景 / 问题陈述（事实，可审计）
-- Server 当前：
-  - TCP listener 已可用；
-  - RFCOMM 仅有 `RFCOMMEnable/RFCOMMUUID` 配置位与 CLI flag，但 `Start()` 中直接返回 “not implemented”；
-  - ParentEndpoint 目前仅支持 `tcp://` 或裸 `host:port`。
-- 需求：Server 需要能够：
-  - 在同一套 Process/Codec 下复用 RFCOMM 字节流 Pipe；
-  - 同时启用 TCP + RFCOMM（可分别开关）；
-  - ParentEndpoint 支持 `bt+rfcomm://...` 的 dial（与 TCP 功能对齐）。
-
-## 目标
-1) 使 `RFCOMMEnable` 真正生效：装配 RFCOMM listener（与 TCP 可并存）。
-2) 扩展 `ParentEndpoint`：在不破坏现有 TCP 行为的前提下支持 `bt+rfcomm://...`。
-3) 配置/参数可控：listen 与 dial 所需参数均可通过 Options/flags 配置（至少 uuid；可扩展 channel/adapter/secure）。
-
-## 非目标
-- 不改协议语义与子协议处理逻辑（仅扩展 transport 能力）。
-- 不在 Server 内实现蓝牙扫描/按设备名解析（由 endpoint 扩展点与平台实现负责）。
-
-## 验收标准
-- `GOWORK=on`（workflow-local go.work）下：
-  - `go test ./...` 通过。
-- `GOWORK=off` 下：
-  - 仅当 Core 已发布并在 go.mod 升级后，`go test ./...` 才要求通过（该动作由本 workflow 后续任务明确执行）。
-- 运行期（手工冒烟）：
-  - 启用 `-rfcomm-enable` 时不再返回 “not implemented”；
-  - `-parent-endpoint bt+rfcomm://...` 能进入拨号路径并给出可定位错误/成功连接（依赖真实环境）。
-
-## 3.1) 计划拆分（Checklist）
-
-### SRV-BT0 - 归档旧 plan（已执行）
-- 已执行：`git mv plan.md docs/plan_archive/plan_archive_2026-03-12_bluetooth-rfcomm-transport-server-prev.md`
-
-### SRV-BT1 - RFCOMM Listener 装配（多入口可并存）
-- 目标：将 runtime 中 RFCOMM 从 “not implemented” 改为真实 listener，并与 TCP 通过 `multi_listener` 组合。
-- 涉及模块/文件（预期）：
-  - `hubruntime/runtime.go`
-  - `hubruntime/options.go`（如需补充 channel/adapter/secure 等字段）
-  - `cmd/hub_server/main.go`（如需补充 flags）
-- 验收条件：
-  - TCP-only、RFCOMM-only、TCP+RFCOMM 三种组合均可启动（RFCOMM 真实环境不足时至少能返回明确错误）。
-- 回滚点：revert。
-
-### SRV-BT2 - ParentEndpoint 支持 `bt+rfcomm://`（dial）
-- 目标：扩展 `normalize*/dialParentEndpoint` 支持多 scheme：
-  - `tcp://host:port` / 裸 `host:port`（保持兼容）
-  - `bt+rfcomm://<bdaddr>?uuid=...&channel=...`（新）
-- 涉及模块/文件（预期）：
-  - `hubruntime/runtime.go`（normalize + dial 分发）
-- 验收条件：
-  - endpoint 解析失败时错误可读；
-  - tcp 行为不回归。
-- 回滚点：revert。
-
-### SRV-BT3 - 依赖/版本对齐（确保 GOWORK=off 可用）
-- 目标：在 Core 具备可用发布版本后，升级 `go.mod` 中 Core 依赖，确保 `GOWORK=off go test ./...` 通过。
-- 涉及文件：`go.mod`、`go.sum`
-- 验收条件：`GOWORK=off go test ./... -count=1 -p 1` 通过。
-- 回滚点：revert。
-
-### SRV-BT4 - Code Review（强制）
-- 审查项：需求覆盖/架构/性能/可读性/扩展性/稳定性与安全/测试覆盖。
-
-### SRV-BT5 - 归档变更（强制）
-- 输出：`docs/change/2026-03-12_bluetooth-rfcomm-transport-server.md`
-- 标注：重大变更（新增 transport 能力 + endpoint 扩展）。
-
-### SRV-BT6 - 合并 / push（需 workflow 结束后执行）
-- 在 `repo/MyFlowHub-Server` 合并到 `main` 并 push。
-
----
-
-# Plan - Server：QUIC 开发自动证书（已完成）
-
-## Workflow 信息
-- Repo：`MyFlowHub-Server`
-- 分支：`feat/quic-dev-cert-auto`
-- Worktree：`d:\project\MyFlowHub3\repo\MyFlowHub-Server\worktrees\feat-quic-dev-cert-auto`
+- Branch：`chore/protocol-delete-docs`
+- Worktree：`D:/project/MyFlowHub3/repo/MyFlowHub-Server/repo/MyFlowHub-Server/worktrees/chore-protocol-delete-docs`
 - Base：`main`
 
-## 目标与结果
-- 目标：新增 `-quic-dev-cert-auto`，在开发环境下未提供证书时自动生成自签名证书。
-- 结果：已实现并合并，默认关闭，不影响生产手工证书路径。
+## 项目目标与当前状态
+- 目标：在 Server 文档中同步新增 `flow.delete` 协议约定（你明确要求协议修改必须同步 docs）。
+- 当前状态：`docs/6-flow.md` 与 `docs/protocol_map.md` 仅描述 `set/run/status/list/get`。
 
-## Checklist（完成态）
-- [x] `DEV-CERT-1` 配置面接入（Options + ENV + CLI）
-- [x] `DEV-CERT-2` 自动证书生成与注入（仅 QUIC 开启且证书为空时触发）
-- [x] `DEV-CERT-3` 单测与回归验证
-- [x] `DEV-CERT-4` 归档文档与代码评审
+## 可执行任务清单（Checklist）
+- [x] SRV-DOC-1 更新 `docs/6-flow.md`（delete 动作与语义）
+- [x] SRV-DOC-2 更新 `docs/protocol_map.md`（如通过生成命令）
+- [x] SRV-DOC-3 文档一致性自检
+
+## 任务明细
+
+### SRV-DOC-1 更新 Flow 协议文档
+- 目标：补齐 `action=delete` 请求/响应、权限、错误码、运行中断语义。
+- 涉及模块/文件：
+  - `docs/6-flow.md`
+- 验收条件：
+  - 明确 `flow.delete` 权限。
+  - 明确 `delete_req/delete_resp` 字段。
+  - 明确“删除时中断运行中的 run（需求指定）”。
+- 测试点：
+  - 文档内容与实现计划一致。
+- 回滚点：
+  - 回退文档修改。
+
+### SRV-DOC-2 更新协议映射文档
+- 目标：确保映射文档列出 delete action/type。
+- 涉及模块/文件：
+  - `docs/protocol_map.md`
+- 验收条件：
+  - Flow action/type 列表包含 delete/delete_resp 与 DeleteReq/DeleteResp。
+- 测试点：
+  - 生成命令（若可用）可执行：`go run ./cmd/protocolmapgen -write -out docs/protocol_map.md`。
+- 回滚点：
+  - 回退该文档。
+
+### SRV-DOC-3 文档一致性自检
+- 目标：防止文档描述与代码计划冲突。
+- 涉及模块/文件：
+  - `docs/6-flow.md`
+  - `docs/protocol_map.md`
+- 验收条件：
+  - 关键字段、权限、错误码、Major 约定无冲突。
+- 测试点：
+  - 人工审阅 + 差异检查。
+- 回滚点：
+  - 回退本 workflow 文档变更。
+
+## 依赖关系
+- 依赖 Proto workflow（新增 action/type）。
+- 与 SubProto workflow 并行，但发布前应做一致性核对。
+
+## 风险与注意事项
+- 风险：若 `protocol_map` 生成依赖环境不完整，需手工最小变更并在归档记录原因。
+- 注意：仅文档改动，不引入实现代码。
 

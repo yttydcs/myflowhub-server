@@ -14,6 +14,7 @@ flow 协议（SubProto=6）规范（草案）
 - 控制帧编码：UTF-8 JSON，envelope 固定为 `{"action":"...","data":{...}}`
 - 典型动作：
   - `set`：设置/更新工作流（需要权限 `flow.set`）
+  - `delete`：删除工作流（需要权限 `flow.delete`）
   - `run`：手动触发一次运行（第一版可选）
   - `status`：查询运行状态（第一版可选）
 - 触发器（当前）：支持 `interval` / `event` / `var_changed`。
@@ -25,13 +26,14 @@ flow 协议（SubProto=6）规范（草案）
 - 权限节点格式：`协议.action`
 - 第一版最小权限：
   - `flow.set`：允许写入/更新工作流定义（落盘并生效）
+  - `flow.delete`：允许删除工作流定义（删除时立即中断该 flow 的运行中 run）
 
 HeaderTcp 与路由约定
 --------------------
 - SubProto 固定为 `6`（预留给 `flow`）。
 - `TargetID` 仍由核心路由自动转发到目标节点；本协议的“逐级授权”不依赖 `TargetID=0` 等特殊语义。
 - Major 约定（统一框架规则）：
-  - 请求帧（`set/run/status/list/get`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行）。
+  - 请求帧（`set/delete/run/status/list/get`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行）。
   - 响应帧（`*_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发；中间节点不需要进 handler 转发）。
   - 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达。
 
@@ -41,13 +43,16 @@ HeaderTcp 与路由约定
 - 子节点无条件信任父节点；父节点对子节点有绝对控制权。
 - 因此“父→子”的控制请求属于“向下控制”，可视为天然可控（具体是否免检由各协议定义）。
 
-本协议 `flow.set` 的逐级授权规则：
-- 请求方将 `flow.set` 发给任意实现了 `flow` 的节点（称为“执行者/Executor”，它将落盘并负责调度）。
+本协议 `flow.set` / `flow.delete` 的逐级授权规则：
+- 请求方将 `flow.set` 或 `flow.delete` 发给任意实现了 `flow` 的节点（称为“执行者/Executor”，它负责落盘与调度状态变更）。
 - 执行者**不直接裁决权限**，而是将请求逐级上送，直到某一级节点能够在其子树内完成裁决并返回结果。
-- 裁决节点（通常为最近公共祖先或其上级）对 `flow.set` 做权限校验：
-  - 校验主体建议为“请求方节点”（`origin_node`），权限名固定为 `flow.set`。
-  - 通过：返回 `set_resp(code=1)`；拒绝：返回 `set_resp(code=403)`。
-- 执行者仅在收到 `code=1` 后才落盘并使工作流生效（权限不足 `set` 不应当生效）。
+- 裁决节点（通常为最近公共祖先或其上级）对动作做权限校验：
+  - 校验主体建议为“请求方节点”（`origin_node`）。
+  - `set` 权限名固定为 `flow.set`；`delete` 权限名固定为 `flow.delete`。
+  - 通过：返回对应 `*_resp(code=1)`；拒绝：返回对应 `*_resp(code=403)`。
+- 执行者仅在收到 `code=1` 后才执行落盘变更：
+  - `set`：写入/更新定义并生效。
+  - `delete`：删除定义并立即中断该 flow 的运行中 run。
 
 > 注：上送转发的具体实现可参考 `varstore` 的 `assist_*` 思路；但 `flow.set` 需要一个明确的最终响应（允许/拒绝），以满足“是否生效”的语义。
 
@@ -85,6 +90,25 @@ HeaderTcp 与路由约定
   - `edges`：array
 
 响应 `action=set_resp`，`data`：
+- `req_id`：回显
+- `code`：`1` 成功；`400/403/404/500` 等失败
+- `msg`：可选错误说明
+- `flow_id`：回显
+
+### action=delete（删除工作流，权限：flow.delete）
+
+请求 `data`：
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
+- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `flow_id`：UUID（必填）
+
+删除语义（第一版）：
+- 删除成功后，执行者必须立即删除对应工作流定义（例如 `./flows/<flow_id>.json`）。
+- 若该 `flow_id` 存在运行中 run，执行者必须立即中断/取消这些 run；不得等待当前节点执行完成。
+- 删除是终态变更；删除后该 `flow_id` 不再参与后续触发与调度，直到再次 `set`。
+
+响应 `action=delete_resp`，`data`：
 - `req_id`：回显
 - `code`：`1` 成功；`400/403/404/500` 等失败
 - `msg`：可选错误说明
@@ -133,8 +157,8 @@ HeaderTcp 与路由约定
 ----------
 - `1`：ok
 - `400`：invalid request / invalid graph
-- `403`：permission denied（`flow.set`）
-- `404`：not found（例如无法找到可裁决节点/无父节点）
+- `403`：permission denied（`flow.set` / `flow.delete`）
+- `404`：not found（例如无法找到可裁决节点/无父节点/删除目标 flow 不存在）
 - `409`：conflict（可选，例如已有运行中的同名 flow 不允许覆盖）
 - `500`：internal error
 
