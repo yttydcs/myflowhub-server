@@ -15,8 +15,10 @@ flow 协议（SubProto=6）规范（草案）
 - 典型动作：
   - `set`：设置/更新工作流（需要权限 `flow.set`）
   - `delete`：删除工作流（需要权限 `flow.delete`）
-  - `run`：手动触发一次运行（第一版可选）
-  - `status`：查询运行状态（第一版可选）
+  - `run`：手动触发一次运行
+  - `status`：查询运行状态
+  - `list`：列出执行者当前已知的工作流摘要
+  - `get`：读取指定工作流定义
 - 触发器（当前）：支持 `interval` / `event` / `var_changed`。
   - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动，按 `event_mode` + `event_name`/`event_topic` 匹配。
   - `var_changed`：由 `varstore.changed` 与 `varstore.deleted` 事件驱动，按 `var_owner`/`var_name` 过滤。
@@ -27,6 +29,7 @@ flow 协议（SubProto=6）规范（草案）
 - 第一版最小权限：
   - `flow.set`：允许写入/更新工作流定义（落盘并生效）
   - `flow.delete`：允许删除工作流定义（删除时立即中断该 flow 的运行中 run）
+- 当前版本未为 `run/status/list/get` 单独定义额外权限；它们按路由到达的 `executor_node` 执行读取/触发。
 
 HeaderTcp 与路由约定
 --------------------
@@ -64,6 +67,7 @@ HeaderTcp 与路由约定
   - `req_id`：UUID 字符串（用于幂等/关联响应）
   - `origin_node`：最初发起请求的节点 ID（用于权限主体）
   - `executor_node`：工作流执行者节点 ID（通常为接收方；可用于一致性校验）
+  - `flow_id`：UUID 字符串；必须通过 UUID 格式校验，不能包含路径分隔符或相对路径片段
 
 ### action=set（设置/更新工作流，权限：flow.set）
 
@@ -114,24 +118,121 @@ HeaderTcp 与路由约定
 - `msg`：可选错误说明
 - `flow_id`：回显
 
+### action=run（手动触发一次运行）
+
+请求 `data`：
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
+- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `flow_id`：UUID（必填）
+
+运行语义：
+- `run` 仅触发一次即时执行，不修改工作流定义和触发器。
+- 若 `executor_node` 不在当前节点，则请求按既有路由规则转发到执行者。
+- 若 `flow_id` 不存在，返回 `run_resp(code=404)`。
+- 成功时返回新的 `run_id`，后续可用于 `status` 精确查询。
+
+响应 `action=run_resp`，`data`：
+- `req_id`：回显
+- `code`：`1` 成功；`400/404/500` 等失败
+- `msg`：可选错误说明
+- `flow_id`：回显
+- `run_id`：成功时必填
+
+### action=status（查询运行状态）
+
+请求 `data`：
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
+- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `flow_id`：UUID（必填）
+- `run_id`：UUID（可选）
+
+状态语义：
+- 若提供 `run_id`，查询该次运行。
+- 若未提供 `run_id`，查询该 `flow_id` 在执行者上的最近一次运行。
+- 若找不到对应运行，返回 `status_resp(code=404)`。
+
+响应 `action=status_resp`，`data`：
+- `req_id`：回显
+- `code`：`1` 成功；`400/404/500` 等失败
+- `msg`：可选错误说明；若运行被取消，可携带取消原因
+- `executor_node`：实际执行者节点 ID
+- `flow_id`：回显
+- `run_id`：命中的运行 ID
+- `status`：`queued` | `running` | `succeeded` | `failed` | `cancelled`
+- `nodes`：array（每个 DAG 节点的状态）
+  - `id`：节点 ID
+  - `status`：`succeeded` | `failed`
+  - `code`：节点执行结果码；例如 `1/404/408/500`
+  - `msg`：可选节点错误说明
+
+### action=list（列出工作流摘要）
+
+请求 `data`：
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
+- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+
+列表语义：
+- 返回执行者当前已知的工作流摘要集合。
+- 摘要仅包含定义概览和最近一次运行信息，不返回完整 DAG。
+
+响应 `action=list_resp`，`data`：
+- `req_id`：回显
+- `code`：`1` 成功；`400/500` 等失败
+- `msg`：可选错误说明
+- `executor_node`：实际执行者节点 ID
+- `flows`：array
+  - `flow_id`：工作流 ID
+  - `name`：工作流名称（可选）
+  - `every_ms`：仅 interval 触发器时有值；否则为 `0` 或省略
+  - `last_run_id`：最近一次运行 ID（可选）
+  - `last_status`：最近一次运行状态（可选）
+
+### action=get（读取工作流定义）
+
+请求 `data`：
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
+- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `flow_id`：UUID（必填）
+
+读取语义：
+- 返回执行者当前生效的工作流定义。
+- 若 `flow_id` 不存在，返回 `get_resp(code=404)`。
+
+响应 `action=get_resp`，`data`：
+- `req_id`：回显
+- `code`：`1` 成功；`400/404/500` 等失败
+- `msg`：可选错误说明
+- `executor_node`：实际执行者节点 ID
+- `flow_id`：回显
+- `name`：工作流名称（可选）
+- `trigger`：触发器定义
+- `graph`：完整 DAG 定义
+
 #### DAG 结构
 
 `graph.nodes[]`（每个 DAG 节点）：
 - `id`：string（必填，图内唯一）
 - `kind`：string（必填）
-  - `"local"`：由执行者节点本地执行（例如调用既有协议、或执行者内置逻辑）
-  - `"exec"`：通过 `exec.call` 调用网络中的“特殊能力”（SubProto=7）
+  - 新写入契约固定为 `"call"`
 - `allow_fail`：bool（可选，默认 false）
   - false：不可接受失败（失败/超时/重试耗尽 => 立即终止整个 flow）
   - true：可接受失败（记录失败并继续）
 - `retry`：int（可选，默认 1；表示失败后最多额外重试次数）
 - `timeout_ms`：int（可选，默认 3000）
-- `spec`：object（必填，按 kind 区分）
-  - kind=local：由执行者自定义（建议用已注册的 `namespace::method` 或直接声明“调用某协议动作”的参数）
-  - kind=exec：
-    - `target`：uint32（必填，目标节点）
-    - `method`：string（必填，形如 `namespace::method`）
-    - `args`：object（可选）
+- `spec`：object（必填）
+  - `method`：string（必填，形如 `namespace::method`）
+  - `args`：object（可选）
+  - `target`：uint32（可选）
+    - `0` / 省略 / 本节点 ID：视为本地调用
+    - 其他节点 ID：通过 `exec.call` 发起远程调用
+
+历史兼容说明：
+- 运行期仍兼容历史存量 `kind=local` / `kind=exec` 数据，用于解释旧的落盘 flow。
+- 新的 `set` 请求不得继续提交 `local/exec`；若提交，应返回 `400`。
 
 `graph.edges[]`：
 - `from`：string（必填，节点 id）
@@ -140,6 +241,9 @@ HeaderTcp 与路由约定
 执行语义（第一版）：
 - 对 `graph` 做拓扑排序；按顺序逐个执行 `nodes`。
 - 每个节点执行采用 `timeout_ms` 控制单次尝试；失败时按 `retry` 进行重试。
+- `kind=call` 的调用分发：
+  - `target` 为空、`0` 或等于本节点：先查本地方法，再查通用 capability registry
+  - `target` 为其他节点：由 `flow` 发起 `exec.call`，再由 `exec` 负责路由与权限裁决
 - 失败处理：
   - `allow_fail=false`：立刻结束，flow=failed
   - `allow_fail=true`：记录节点失败，继续执行后续节点
@@ -156,9 +260,9 @@ HeaderTcp 与路由约定
 错误码建议
 ----------
 - `1`：ok
-- `400`：invalid request / invalid graph
+- `400`：invalid request / invalid graph / invalid flow_id / unsupported legacy write kind
 - `403`：permission denied（`flow.set` / `flow.delete`）
-- `404`：not found（例如无法找到可裁决节点/无父节点/删除目标 flow 不存在）
+- `404`：not found（例如无法找到可裁决节点/无父节点/删除目标 flow 不存在、run/status/get 查询目标不存在）
 - `409`：conflict（可选，例如已有运行中的同名 flow 不允许覆盖）
 - `500`：internal error
 
