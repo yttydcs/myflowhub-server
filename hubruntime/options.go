@@ -3,10 +3,11 @@ package hubruntime
 import (
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
-	core "github.com/yttydcs/myflowhub-core"
+	coreconfig "github.com/yttydcs/myflowhub-core/config"
 )
 
 // Options defines a reusable HubServer runtime configuration.
@@ -80,58 +81,191 @@ type Options struct {
 	// When empty, runtime will not perform self-register and will not bind parent conn via register.
 	SelfID string
 
+	// ConfigOverrideKeys records config keys explicitly supplied by env/flags/caller.
+	// It is stored as a comma-separated list to keep Options gomobile-friendly.
+	ConfigOverrideKeys string
+
 	Logger *slog.Logger
 }
 
-func DefaultOptionsFromEnv() Options {
+func DefaultOptions() Options {
 	return Options{
-		TCPEnable:             core.ParseBool(getenv("HUB_TCP_ENABLE", "true"), true),
-		Addr:                  getenv("HUB_ADDR", ":9000"),
-		QUICEnable:            core.ParseBool(getenv("HUB_QUIC_ENABLE", "false"), false),
-		QUICAddr:              getenv("HUB_QUIC_ADDR", ":9000"),
-		QUICALPN:              getenv("HUB_QUIC_ALPN", "myflowhub"),
-		QUICCertFile:          getenv("HUB_QUIC_CERT_FILE", ""),
-		QUICKeyFile:           getenv("HUB_QUIC_KEY_FILE", ""),
-		QUICDevCertAuto:       core.ParseBool(getenv("HUB_QUIC_DEV_CERT_AUTO", "false"), false),
-		QUICClientCAFile:      getenv("HUB_QUIC_CLIENT_CA_FILE", ""),
-		QUICRequireClientCert: core.ParseBool(getenv("HUB_QUIC_REQUIRE_CLIENT_CERT", "false"), false),
-		NodeID:                getenvUint32("HUB_NODE_ID", 1),
-		ParentEndpoint:        getenv("HUB_PARENT_ENDPOINT", ""),
-		ParentAddr:            getenv("HUB_PARENT_ADDR", ""),
-		ParentEnable:          core.ParseBool(getenv("HUB_PARENT_ENABLE", "false"), false),
-		ParentReconnectSec:    int(getenvInt("HUB_PARENT_RECONNECT", 3)),
+		TCPEnable:             true,
+		Addr:                  ":9000",
+		QUICEnable:            false,
+		QUICAddr:              ":9000",
+		QUICALPN:              "myflowhub",
+		QUICCertFile:          "",
+		QUICKeyFile:           "",
+		QUICDevCertAuto:       false,
+		QUICClientCAFile:      "",
+		QUICRequireClientCert: false,
+		NodeID:                1,
+		ParentEndpoint:        "",
+		ParentAddr:            "",
+		ParentEnable:          false,
+		ParentReconnectSec:    3,
 
-		RFCOMMEnable: core.ParseBool(getenv("HUB_RFCOMM_ENABLE", "false"), false),
-		// Default UUID (MyFlowHub)
-		RFCOMMUUID:     getenv("HUB_RFCOMM_UUID", "0eef65b8-9374-42ea-b992-6ee2d0699f5c"),
-		RFCOMMChannel:  int(getenvInt("HUB_RFCOMM_CHANNEL", 0)),
-		RFCOMMAdapter:  getenv("HUB_RFCOMM_ADAPTER", "hci0"),
-		RFCOMMInsecure: core.ParseBool(getenv("HUB_RFCOMM_INSECURE", "false"), false),
+		RFCOMMEnable:   false,
+		RFCOMMUUID:     "0eef65b8-9374-42ea-b992-6ee2d0699f5c",
+		RFCOMMChannel:  0,
+		RFCOMMAdapter:  "hci0",
+		RFCOMMInsecure: false,
 
-		ProcChannels: int(getenvInt("HUB_PROC_CHANNELS", 4)),
-		ProcWorkers:  int(getenvInt("HUB_PROC_WORKERS", 8)),
-		ProcBuffer:   int(getenvInt("HUB_PROC_BUFFER", 256)),
+		ProcChannels: 4,
+		ProcWorkers:  8,
+		ProcBuffer:   256,
 
-		SendChannels:      int(getenvInt("HUB_SEND_CHANNELS", 2)),
-		SendWorkers:       int(getenvInt("HUB_SEND_WORKERS", 2)),
-		SendChannelBuffer: int(getenvInt("HUB_SEND_CHANNEL_BUFFER", 128)),
-		SendConnBuffer:    int(getenvInt("HUB_SEND_CONN_BUFFER", 128)),
+		SendChannels:      2,
+		SendWorkers:       2,
+		SendChannelBuffer: 128,
+		SendConnBuffer:    128,
 
-		AuthDefaultRole:  getenv("HUB_AUTH_DEFAULT_ROLE", "node"),
-		AuthDefaultPerms: getenv("HUB_AUTH_DEFAULT_PERMS", ""),
-		AuthNodeRoles:    getenv("HUB_AUTH_NODE_ROLES", ""),
-		// 默认给 node 角色开放 file/flow/exec 权限（包含 capability registry/query；可用 HUB_AUTH_ROLE_PERMS 覆盖）
-		AuthRolePerms: getenv("HUB_AUTH_ROLE_PERMS", "node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync"),
+		AuthDefaultRole:  "node",
+		AuthDefaultPerms: "",
+		AuthNodeRoles:    "",
+		// Default node role perms; HUB_AUTH_ROLE_PERMS may override it.
+		AuthRolePerms: "node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync",
 
-		WorkDir: getenv("HUB_WORKDIR", ""),
-		SelfID:  getenv("HUB_SELF_ID", ""),
+		WorkDir:            "",
+		SelfID:             "",
+		ConfigOverrideKeys: "",
 	}
+}
+
+func DefaultOptionsFromEnv() Options {
+	opts := DefaultOptions()
+
+	if v, ok := lookupEnvBool("HUB_TCP_ENABLE"); ok {
+		opts.TCPEnable = v
+	}
+	if v, ok := lookupEnvString("HUB_ADDR"); ok {
+		opts.Addr = v
+		opts.AddConfigOverrideKeys("addr")
+	}
+	if v, ok := lookupEnvBool("HUB_QUIC_ENABLE"); ok {
+		opts.QUICEnable = v
+	}
+	if v, ok := lookupEnvString("HUB_QUIC_ADDR"); ok {
+		opts.QUICAddr = v
+	}
+	if v, ok := lookupEnvString("HUB_QUIC_ALPN"); ok {
+		opts.QUICALPN = v
+	}
+	if v, ok := lookupEnvString("HUB_QUIC_CERT_FILE"); ok {
+		opts.QUICCertFile = v
+	}
+	if v, ok := lookupEnvString("HUB_QUIC_KEY_FILE"); ok {
+		opts.QUICKeyFile = v
+	}
+	if v, ok := lookupEnvBool("HUB_QUIC_DEV_CERT_AUTO"); ok {
+		opts.QUICDevCertAuto = v
+	}
+	if v, ok := lookupEnvString("HUB_QUIC_CLIENT_CA_FILE"); ok {
+		opts.QUICClientCAFile = v
+	}
+	if v, ok := lookupEnvBool("HUB_QUIC_REQUIRE_CLIENT_CERT"); ok {
+		opts.QUICRequireClientCert = v
+	}
+	if v, ok := lookupEnvUint32("HUB_NODE_ID"); ok {
+		opts.NodeID = v
+	}
+	if v, ok := lookupEnvString("HUB_PARENT_ENDPOINT"); ok {
+		opts.ParentEndpoint = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyParentAddr)
+	}
+	if v, ok := lookupEnvString("HUB_PARENT_ADDR"); ok {
+		opts.ParentAddr = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyParentAddr)
+	}
+	if v, ok := lookupEnvBool("HUB_PARENT_ENABLE"); ok {
+		opts.ParentEnable = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyParentEnable)
+	}
+	if v, ok := lookupEnvInt("HUB_PARENT_RECONNECT"); ok {
+		opts.ParentReconnectSec = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeyParentReconnectSec)
+	}
+
+	if v, ok := lookupEnvBool("HUB_RFCOMM_ENABLE"); ok {
+		opts.RFCOMMEnable = v
+	}
+	if v, ok := lookupEnvString("HUB_RFCOMM_UUID"); ok {
+		opts.RFCOMMUUID = v
+	}
+	if v, ok := lookupEnvInt("HUB_RFCOMM_CHANNEL"); ok {
+		opts.RFCOMMChannel = int(v)
+	}
+	if v, ok := lookupEnvString("HUB_RFCOMM_ADAPTER"); ok {
+		opts.RFCOMMAdapter = v
+	}
+	if v, ok := lookupEnvBool("HUB_RFCOMM_INSECURE"); ok {
+		opts.RFCOMMInsecure = v
+	}
+
+	if v, ok := lookupEnvInt("HUB_PROC_CHANNELS"); ok {
+		opts.ProcChannels = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeyProcChannelCount)
+	}
+	if v, ok := lookupEnvInt("HUB_PROC_WORKERS"); ok {
+		opts.ProcWorkers = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeyProcWorkersPerChan)
+	}
+	if v, ok := lookupEnvInt("HUB_PROC_BUFFER"); ok {
+		opts.ProcBuffer = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeyProcChannelBuffer)
+	}
+
+	if v, ok := lookupEnvInt("HUB_SEND_CHANNELS"); ok {
+		opts.SendChannels = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeySendChannelCount)
+	}
+	if v, ok := lookupEnvInt("HUB_SEND_WORKERS"); ok {
+		opts.SendWorkers = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeySendWorkersPerChan)
+	}
+	if v, ok := lookupEnvInt("HUB_SEND_CHANNEL_BUFFER"); ok {
+		opts.SendChannelBuffer = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeySendChannelBuffer)
+	}
+	if v, ok := lookupEnvInt("HUB_SEND_CONN_BUFFER"); ok {
+		opts.SendConnBuffer = int(v)
+		opts.AddConfigOverrideKeys(coreconfig.KeySendConnBuffer)
+	}
+
+	if v, ok := lookupEnvString("HUB_AUTH_DEFAULT_ROLE"); ok {
+		opts.AuthDefaultRole = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyAuthDefaultRole)
+	}
+	if v, ok := lookupEnvString("HUB_AUTH_DEFAULT_PERMS"); ok {
+		opts.AuthDefaultPerms = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyAuthDefaultPerms)
+	}
+	if v, ok := lookupEnvString("HUB_AUTH_NODE_ROLES"); ok {
+		opts.AuthNodeRoles = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyAuthNodeRoles)
+	}
+	if v, ok := lookupEnvString("HUB_AUTH_ROLE_PERMS"); ok {
+		opts.AuthRolePerms = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyAuthRolePerms)
+	}
+
+	if v, ok := lookupEnvString("HUB_WORKDIR"); ok {
+		opts.WorkDir = v
+	}
+	if v, ok := lookupEnvString("HUB_SELF_ID"); ok {
+		opts.SelfID = v
+	}
+
+	return opts
 }
 
 func (o *Options) Normalize() {
 	if o == nil {
 		return
 	}
+	defaults := DefaultOptions()
+	overrideKeys := o.configOverrideKeySet()
 	if strings.TrimSpace(o.ParentEndpoint) != "" || strings.TrimSpace(o.ParentAddr) != "" {
 		o.ParentEnable = true
 	}
@@ -143,56 +277,177 @@ func (o *Options) Normalize() {
 	o.QUICClientCAFile = strings.TrimSpace(o.QUICClientCAFile)
 	o.ParentEndpoint = strings.TrimSpace(o.ParentEndpoint)
 	o.ParentAddr = strings.TrimSpace(o.ParentAddr)
-
-	if o.TCPEnable && strings.TrimSpace(o.Addr) == "" {
-		o.Addr = ":9000"
+	if o.TCPEnable && o.Addr == "" {
+		if _, ok := overrideKeys["addr"]; !ok {
+			o.Addr = defaults.Addr
+		}
 	}
-	if o.QUICEnable && strings.TrimSpace(o.QUICAddr) == "" {
-		o.QUICAddr = ":9000"
+	if o.QUICEnable && o.QUICAddr == "" {
+		o.QUICAddr = defaults.QUICAddr
 	}
-	if o.QUICEnable && strings.TrimSpace(o.QUICALPN) == "" {
-		o.QUICALPN = "myflowhub"
+	if o.QUICEnable && o.QUICALPN == "" {
+		o.QUICALPN = defaults.QUICALPN
 	}
 	if o.ParentReconnectSec < 0 {
 		o.ParentReconnectSec = 0
+	} else if o.ParentReconnectSec == 0 {
+		if _, ok := overrideKeys[coreconfig.KeyParentReconnectSec]; !ok {
+			o.ParentReconnectSec = defaults.ParentReconnectSec
+		}
 	}
 	o.RFCOMMUUID = strings.TrimSpace(o.RFCOMMUUID)
 	o.RFCOMMAdapter = strings.TrimSpace(o.RFCOMMAdapter)
+	if o.RFCOMMUUID == "" {
+		o.RFCOMMUUID = defaults.RFCOMMUUID
+	}
 	if o.RFCOMMChannel < 0 {
 		o.RFCOMMChannel = 0
 	}
 	if o.RFCOMMEnable && o.RFCOMMAdapter == "" {
-		o.RFCOMMAdapter = "hci0"
+		o.RFCOMMAdapter = defaults.RFCOMMAdapter
+	}
+	if o.ProcChannels == 0 {
+		if _, ok := overrideKeys[coreconfig.KeyProcChannelCount]; !ok {
+			o.ProcChannels = defaults.ProcChannels
+		}
+	}
+	if o.ProcWorkers == 0 {
+		if _, ok := overrideKeys[coreconfig.KeyProcWorkersPerChan]; !ok {
+			o.ProcWorkers = defaults.ProcWorkers
+		}
+	}
+	if o.ProcBuffer == 0 {
+		if _, ok := overrideKeys[coreconfig.KeyProcChannelBuffer]; !ok {
+			o.ProcBuffer = defaults.ProcBuffer
+		}
+	}
+	if o.SendChannels == 0 {
+		if _, ok := overrideKeys[coreconfig.KeySendChannelCount]; !ok {
+			o.SendChannels = defaults.SendChannels
+		}
+	}
+	if o.SendWorkers == 0 {
+		if _, ok := overrideKeys[coreconfig.KeySendWorkersPerChan]; !ok {
+			o.SendWorkers = defaults.SendWorkers
+		}
+	}
+	if o.SendChannelBuffer == 0 {
+		if _, ok := overrideKeys[coreconfig.KeySendChannelBuffer]; !ok {
+			o.SendChannelBuffer = defaults.SendChannelBuffer
+		}
+	}
+	if o.SendConnBuffer == 0 {
+		if _, ok := overrideKeys[coreconfig.KeySendConnBuffer]; !ok {
+			o.SendConnBuffer = defaults.SendConnBuffer
+		}
 	}
 	o.AuthDefaultRole = strings.TrimSpace(o.AuthDefaultRole)
 	o.AuthDefaultPerms = strings.TrimSpace(o.AuthDefaultPerms)
 	o.AuthNodeRoles = strings.TrimSpace(o.AuthNodeRoles)
 	o.AuthRolePerms = strings.TrimSpace(o.AuthRolePerms)
+	if o.AuthDefaultRole == "" {
+		if _, ok := overrideKeys[coreconfig.KeyAuthDefaultRole]; !ok {
+			o.AuthDefaultRole = defaults.AuthDefaultRole
+		}
+	}
+	if o.AuthRolePerms == "" {
+		if _, ok := overrideKeys[coreconfig.KeyAuthRolePerms]; !ok {
+			o.AuthRolePerms = defaults.AuthRolePerms
+		}
+	}
 	o.WorkDir = strings.TrimSpace(o.WorkDir)
 	o.SelfID = strings.TrimSpace(o.SelfID)
+	o.ConfigOverrideKeys = joinOverrideKeys(splitOverrideKeys(o.ConfigOverrideKeys))
 }
 
-func getenv(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
+func (o *Options) AddConfigOverrideKeys(keys ...string) {
+	if o == nil {
+		return
 	}
-	return def
-}
-
-func getenvInt(key string, def int64) int64 {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return n
+	set := splitOverrideKeys(o.ConfigOverrideKeys)
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
 		}
+		set[key] = struct{}{}
 	}
-	return def
+	o.ConfigOverrideKeys = joinOverrideKeys(set)
 }
 
-func getenvUint32(key string, def uint32) uint32 {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		if n, err := strconv.ParseUint(v, 10, 32); err == nil {
-			return uint32(n)
+func (o Options) configOverrideKeySet() map[string]struct{} {
+	return splitOverrideKeys(o.ConfigOverrideKeys)
+}
+
+func splitOverrideKeys(raw string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t'
+	}) {
+		key := strings.TrimSpace(part)
+		if key == "" {
+			continue
 		}
+		out[key] = struct{}{}
 	}
-	return def
+	return out
+}
+
+func joinOverrideKeys(set map[string]struct{}) string {
+	if len(set) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+func lookupEnvString(key string) (string, bool) {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(raw), true
+}
+
+func lookupEnvBool(key string) (bool, bool) {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return false, false
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "y", "on":
+		return true, true
+	case "0", "false", "no", "n", "off":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func lookupEnvInt(key string) (int64, bool) {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func lookupEnvUint32(key string) (uint32, bool) {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 32)
+	if err != nil {
+		return 0, false
+	}
+	return uint32(n), true
 }
