@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-server/hubruntime"
 )
 
@@ -52,6 +53,7 @@ func main() {
 	flag.Parse()
 
 	opts.NodeID = uint32(nodeID)
+	captureFlagOverrides(&opts)
 	opts.Logger = setupLogger()
 	opts.Normalize()
 
@@ -94,4 +96,44 @@ func waitSignal() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	<-ch
+}
+
+func captureFlagOverrides(opts *hubruntime.Options) {
+	if opts == nil {
+		return
+	}
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "addr":
+			opts.AddConfigOverrideKeys("addr")
+		case "parent", "parent-endpoint":
+			opts.AddConfigOverrideKeys(coreconfig.KeyParentAddr)
+		case "parent-enable":
+			opts.AddConfigOverrideKeys(coreconfig.KeyParentEnable)
+		case "parent-reconnect":
+			opts.AddConfigOverrideKeys(coreconfig.KeyParentReconnectSec)
+		case "proc-channels":
+			opts.AddConfigOverrideKeys(coreconfig.KeyProcChannelCount)
+		case "proc-workers":
+			opts.AddConfigOverrideKeys(coreconfig.KeyProcWorkersPerChan)
+		case "proc-buffer":
+			opts.AddConfigOverrideKeys(coreconfig.KeyProcChannelBuffer)
+		case "send-channels":
+			opts.AddConfigOverrideKeys(coreconfig.KeySendChannelCount)
+		case "send-workers":
+			opts.AddConfigOverrideKeys(coreconfig.KeySendWorkersPerChan)
+		case "send-channel-buffer":
+			opts.AddConfigOverrideKeys(coreconfig.KeySendChannelBuffer)
+		case "send-conn-buffer":
+			opts.AddConfigOverrideKeys(coreconfig.KeySendConnBuffer)
+		case "auth-default-role":
+			opts.AddConfigOverrideKeys(coreconfig.KeyAuthDefaultRole)
+		case "auth-default-perms":
+			opts.AddConfigOverrideKeys(coreconfig.KeyAuthDefaultPerms)
+		case "auth-node-roles":
+			opts.AddConfigOverrideKeys(coreconfig.KeyAuthNodeRoles)
+		case "auth-role-perms":
+			opts.AddConfigOverrideKeys(coreconfig.KeyAuthRolePerms)
+		}
+	})
 }

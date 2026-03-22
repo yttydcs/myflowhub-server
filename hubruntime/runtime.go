@@ -17,7 +17,6 @@ import (
 
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/bootstrap"
-	coreconfig "github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/connmgr"
 	"github.com/yttydcs/myflowhub-core/header"
 	"github.com/yttydcs/myflowhub-core/listener/multi_listener"
@@ -70,12 +69,6 @@ func New(opts Options) (*Runtime, error) {
 	if !opts.TCPEnable && !opts.RFCOMMEnable && !opts.QUICEnable {
 		return nil, errors.New("no listener enabled")
 	}
-	if opts.TCPEnable && strings.TrimSpace(opts.Addr) == "" {
-		return nil, errors.New("tcp addr required")
-	}
-	if opts.QUICEnable && strings.TrimSpace(opts.QUICAddr) == "" {
-		return nil, errors.New("quic addr required")
-	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
@@ -103,6 +96,26 @@ func (r *Runtime) Start(ctx context.Context) error {
 	}
 	if normalizedWorkDir != "" {
 		opts.WorkDir = normalizedWorkDir
+	}
+
+	cfg, err := buildConfig(opts)
+	if err != nil {
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
+	}
+	opts = applyConfigToOptions(opts, cfg)
+	if opts.TCPEnable && strings.TrimSpace(opts.Addr) == "" {
+		err := errors.New("tcp addr required")
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
+	}
+	if opts.QUICEnable && strings.TrimSpace(opts.QUICAddr) == "" {
+		err := errors.New("quic addr required")
+		_ = r.restoreWorkDir()
+		r.storeErr(err)
+		return err
 	}
 	if err := ensureQUICDevCertIfNeeded(&opts, log); err != nil {
 		_ = r.restoreWorkDir()
@@ -146,8 +159,6 @@ func (r *Runtime) Start(ctx context.Context) error {
 			opts.NodeID = nodeID
 		}
 	}
-
-	cfg := buildConfig(opts)
 
 	cm := connmgr.New()
 	base := process.NewPreRoutingProcess(log).WithConfig(cfg)
@@ -515,37 +526,6 @@ func findParentConn(cm core.IConnectionManager) (core.IConnection, bool) {
 		return true
 	})
 	return parent, parent != nil
-}
-
-func buildConfig(opts Options) core.IConfig {
-	reconnect := "3"
-	if opts.ParentReconnectSec > 0 {
-		reconnect = fmt.Sprintf("%d", opts.ParentReconnectSec)
-	}
-	parentTarget := effectiveParentTarget(opts)
-	data := map[string]string{
-		"addr":                           opts.Addr,
-		coreconfig.KeyParentAddr:         parentTarget,
-		coreconfig.KeyParentEnable:       boolString(opts.ParentEnable),
-		coreconfig.KeyParentReconnectSec: reconnect,
-
-		coreconfig.KeyProcChannelCount:   fmt.Sprintf("%d", opts.ProcChannels),
-		coreconfig.KeyProcWorkersPerChan: fmt.Sprintf("%d", opts.ProcWorkers),
-		coreconfig.KeyProcChannelBuffer:  fmt.Sprintf("%d", opts.ProcBuffer),
-
-		coreconfig.KeySendChannelCount:   fmt.Sprintf("%d", opts.SendChannels),
-		coreconfig.KeySendWorkersPerChan: fmt.Sprintf("%d", opts.SendWorkers),
-		coreconfig.KeySendChannelBuffer:  fmt.Sprintf("%d", opts.SendChannelBuffer),
-		coreconfig.KeySendConnBuffer:     fmt.Sprintf("%d", opts.SendConnBuffer),
-
-		coreconfig.KeyRoutingForwardRemote: "true",
-
-		coreconfig.KeyAuthDefaultRole:  opts.AuthDefaultRole,
-		coreconfig.KeyAuthDefaultPerms: opts.AuthDefaultPerms,
-		coreconfig.KeyAuthNodeRoles:    opts.AuthNodeRoles,
-		coreconfig.KeyAuthRolePerms:    opts.AuthRolePerms,
-	}
-	return coreconfig.NewMap(data)
 }
 
 func boolString(v bool) string {
