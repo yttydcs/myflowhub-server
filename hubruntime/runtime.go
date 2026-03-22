@@ -273,7 +273,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 
 	// Post-start: bind parent connection (root side) by sending an auth register on the persistent parent link.
 	if opts.ParentEnable && parentTarget != "" {
-		r.startParentBootstrapWatcher()
+		r.startParentBootstrapWatcher(cfg)
 	}
 	log.Info("hub runtime started", "addr", opts.Addr, "node_id", opts.NodeID, "parent", parentTarget)
 	return nil
@@ -371,7 +371,7 @@ func (r *Runtime) restoreWorkDir() error {
 	return os.Chdir(prev)
 }
 
-func (r *Runtime) startParentBootstrapWatcher() {
+func (r *Runtime) startParentBootstrapWatcher(cfg core.IConfig) {
 	r.mu.Lock()
 	if r.srv == nil || r.parentWatchCancel != nil {
 		r.mu.Unlock()
@@ -423,7 +423,8 @@ func (r *Runtime) startParentBootstrapWatcher() {
 			if lastRegisterConnID == lastConnID {
 				continue
 			}
-			if err := sendRegisterOnConn(watchCtx, conn, opts.SelfID, &r.msgSeq); err != nil {
+			displayName := trimmedConfigValue(cfg, "node.display_name")
+			if err := sendRegisterOnConn(watchCtx, conn, opts.SelfID, displayName, &r.msgSeq); err != nil {
 				log.Warn("parent bootstrap register failed", "err", err, "conn", conn.ID())
 				r.storeErr(err)
 				continue
@@ -482,7 +483,18 @@ func selfRegisterNodeID(ctx context.Context, parentAddr, selfID string, log *slo
 	return nodeID, nil
 }
 
-func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID string, seq *atomic.Uint32) error {
+func trimmedConfigValue(cfg core.IConfig, key string) string {
+	if cfg == nil {
+		return ""
+	}
+	val, ok := cfg.Get(key)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(val)
+}
+
+func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, displayName string, seq *atomic.Uint32) error {
 	if ctx == nil {
 		return errors.New("ctx nil")
 	}
@@ -492,9 +504,15 @@ func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID strin
 	if strings.TrimSpace(selfID) == "" {
 		return errors.New("self id required for parent bootstrap")
 	}
+	data := map[string]any{
+		"device_id": strings.TrimSpace(selfID),
+	}
+	if trimmedDisplayName := strings.TrimSpace(displayName); trimmedDisplayName != "" {
+		data["display_name"] = trimmedDisplayName
+	}
 	payload, _ := json.Marshal(map[string]any{
 		"action": "register",
-		"data":   map[string]any{"device_id": selfID},
+		"data":   data,
 	})
 	msgID := seq.Add(1)
 	hdr := (&header.HeaderTcp{}).
