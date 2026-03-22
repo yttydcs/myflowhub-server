@@ -12,6 +12,7 @@
 - 结果归档记录必须显式说明验证方式与回滚方案。
 
 ## Current Entries
+- [2026-03-22_hubruntime-node-display-name-followup.md](2026-03-22_hubruntime-node-display-name-followup.md)
 - [2026-03-22_hubruntime-layered-config-persistence.md](2026-03-22_hubruntime-layered-config-persistence.md)
 - [2026-03-22_server-flow-data-dag-docs.md](2026-03-22_server-flow-data-dag-docs.md)
 - [2026-03-22_server-docs-governance.md](2026-03-22_server-docs-governance.md)

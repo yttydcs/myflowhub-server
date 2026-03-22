@@ -25,10 +25,10 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 动作与数据字段
 -------------
 - register / assist_register  
-  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`（pubkey 可选；缺省不会自动填充，也不会写入 trusted/binding 公钥）。  
-  - resp: `{"code","msg,omitempty","device_id","node_id","hub_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","ts,omitempty","nonce,omitempty"}`
+  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","ts,omitempty","nonce,omitempty"}`（pubkey 可选；缺省不会自动填充，也不会写入 trusted/binding 公钥；`display_name` 为可选提示字段）。  
+  - resp: `{"code","msg,omitempty","device_id","node_id","hub_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","ts,omitempty","nonce,omitempty"}`
 - login / assist_login  
-  - req: `{"device_id","node_id,omitempty","ts","nonce","sig","alg"}`，需 ES256 签名。  
+  - req: `{"device_id","node_id,omitempty","display_name,omitempty","ts","nonce","sig","alg"}`，需 ES256 签名；`display_name` 为可选提示字段，不进入签名摘要。  
   - resp: 同 register_resp，失败 code=4001。
 - assist_query_credential / _resp  
   - req: `{"device_id","node_id,omitempty"}`  
@@ -57,6 +57,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 --------
 - 注册：本地权威或 assist_register 上送权威分配 node_id；保存 whitelist/路由；仅当请求携带 pubkey 时才写入 trusted/binding 公钥，返回 register_resp/assist_register_resp。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
+- 直连名称缓存：当 direct child 在 register/login 或对应 assist 回包中携带 `display_name` 时，直接父节点可以把该值缓存到连接 metadata，供 management `list_nodes` 低成本返回；缺失时保持回退 `node_id`。
 - 权限：角色/权限来自配置与白名单；perms_invalidate 清缓存并可刷新；perms_snapshot 应用后广播下行。
 - 撤销：校验权限→删除绑定→回 resp（仅命中）→广播 revoke 上下行。
 - 下线：删除绑定与索引；向父 assist_offline；无响应。
