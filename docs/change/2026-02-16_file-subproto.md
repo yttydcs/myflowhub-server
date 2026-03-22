@@ -12,7 +12,7 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 ## 具体变更内容
 ### 新增
 - `subproto/file/*`：承载 File 子协议实现（由原目录迁移而来）
-- `docs/plan_archive/plan_archive_2026-02-16_flow-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
+- `docs/plan/plan_archive_2026-02-16_flow-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
 
 ### 修改
 - `modules/hub.go`：默认模块集合改用 `subproto/file`
@@ -63,4 +63,5 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 - 可扩展性与配置化：通过（迁移到 `subproto/*` 后更易拆库/裁切；`modules` 装配保持集中）。
 - 稳定性与安全：通过（不改权限/路径清洗/会话管理语义；默认安全策略不变）。
 - 测试覆盖：通过（`go test ./... -count=1 -p 1` 在 Windows 通过；当前无专属单测，依赖全量回归覆盖编译与集成）。
+
 

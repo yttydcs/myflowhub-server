@@ -11,7 +11,7 @@
 - Auth 子协议实现位于 `internal/handler/auth/`，只能在本仓库内部引用。
 - `modules/hub.go` 默认装配仍直接 import `internal/handler/auth`。
 - `tests/*` 多处 import `internal/handler/auth`，用于构造并验证 `LoginHandler` 的权限与路由行为。
-- `docs/2-auth.md` 明确以 `internal/handler/auth` 为实现路径描述。
+- `docs/specs/auth.md` 明确以 `internal/handler/auth` 为实现路径描述。
 - Auth 的协议常量/类型当前由 `internal/handler/auth/types.go` 通过 Server 兼容壳 `protocol/auth` 间接引用；该兼容壳已委托到 `MyFlowHub-Proto`（wire 不变）。
 
 > 环境备注（不进 git）：本仓库 `go.mod` 使用 `replace ../MyFlowHub-Core`、`../MyFlowHub-Proto`。  
@@ -30,7 +30,7 @@
 - `subproto/auth/types.go` 直接依赖 `github.com/yttydcs/myflowhub-proto/protocol/auth`（减少对 Server 兼容壳的耦合；wire 不变）。
 - `modules/hub.go` 默认集合改用 `subproto/auth.NewLoginHandlerWithConfig`。
 - `tests/*` 引用点切换为 `github.com/yttydcs/myflowhub-server/subproto/auth`。
-- 文档 `docs/2-auth.md` 更新为 `subproto/auth` 路径描述（保持内容语义不变）。
+- 文档 `docs/specs/auth.md` 更新为 `subproto/auth` 路径描述（保持内容语义不变）。
 - 清理：删除 `internal/handler/auth` 目录，确保仓库内不再引用该路径。
 - 回归：`go test ./... -count=1 -p 1` 通过（Windows）。
 
@@ -68,7 +68,7 @@
 ### 验收标准
 - `modules/hub.go` 不再 import `github.com/yttydcs/myflowhub-server/internal/handler/auth`。
 - `tests` 不再 import `github.com/yttydcs/myflowhub-server/internal/handler/auth`。
-- `docs/2-auth.md` 不再以 `internal/handler/auth` 作为实现路径描述。
+- `docs/specs/auth.md` 不再以 `internal/handler/auth` 作为实现路径描述。
 - `rg "github.com/yttydcs/myflowhub-server/internal/handler/auth" ./` 在仓库内无命中（历史归档 `docs/change/*` 可能仍包含文字描述，不作为本 PR 验收对象）。
 - `go test ./... -count=1 -p 1` 通过（Windows）。
 
@@ -157,7 +157,7 @@
 ### AU4 - 文档路径同步
 - 目标：避免文档继续描述已不存在的实现路径。
 - 涉及文件（预期）：
-  - `docs/2-auth.md`
+  - `docs/specs/auth.md`
 - 验收条件：文档中实现路径更新为 `subproto/auth`，语义不变。
 - 回滚点：revert 文档提交。
 
@@ -179,3 +179,4 @@
 - 2026-02-16：创建本 workflow worktree 与计划文档。
 - 2026-02-16：完成 AU1-AU5；回归 `go test ./... -count=1 -p 1` 通过（Windows）。
 - 2026-02-16：完成 AU6（Code Review 通过；归档文档补齐）。
+

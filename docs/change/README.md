@@ -1,0 +1,67 @@
+# Change Archive
+
+`docs/change/` 保存 `MyFlowHub-Server` 已完成 workflow 的结果、验证与回滚记录。
+
+## How To Use
+- 先看 [../README.md](../README.md) 了解阅读顺序。
+- 想看历史计划与任务拆分，继续看 [../plan/README.md](../plan/README.md)。
+- 想看长期技术真相，回到 [../specs/README.md](../specs/README.md)。
+
+## Rules
+- 文件名使用 `YYYY-MM-DD_topic.md`。
+- 结果归档记录必须显式说明验证方式与回滚方案。
+
+## Current Entries
+- [2026-03-22_server-docs-governance.md](2026-03-22_server-docs-governance.md)
+- [2026-03-21_server-flow-contract-align.md](2026-03-21_server-flow-contract-align.md)
+- [2026-03-21_server-docs-flow-delete.md](2026-03-21_server-docs-flow-delete.md)
+- [2026-03-16_server-quic-runtime.md](2026-03-16_server-quic-runtime.md)
+- [2026-03-16_server-quic-dev-cert-auto.md](2026-03-16_server-quic-dev-cert-auto.md)
+- [2026-03-16_server-bump-core-v0.4.7.md](2026-03-16_server-bump-core-v0.4.7.md)
+- [2026-03-15_bump-core-v0.4.6-server.md](2026-03-15_bump-core-v0.4.6-server.md)
+- [2026-03-15_bump-core-v0.4.5-server.md](2026-03-15_bump-core-v0.4.5-server.md)
+- [2026-03-15_bump-core-v0.4.4-server.md](2026-03-15_bump-core-v0.4.4-server.md)
+- [2026-03-13_bump-core-v0.4.0-server.md](2026-03-13_bump-core-v0.4.0-server.md)
+- [2026-03-13_bump-core-v0.3.1-server.md](2026-03-13_bump-core-v0.3.1-server.md)
+- [2026-03-12_transport-pipe-server.md](2026-03-12_transport-pipe-server.md)
+- [2026-03-12_bump-core-v0.3.0-server.md](2026-03-12_bump-core-v0.3.0-server.md)
+- [2026-03-12_bluetooth-rfcomm-transport-server.md](2026-03-12_bluetooth-rfcomm-transport-server.md)
+- [2026-03-08_auth-route-index-heal-server.md](2026-03-08_auth-route-index-heal-server.md)
+- [2026-03-07_bump-varstore-v0.1.2.md](2026-03-07_bump-varstore-v0.1.2.md)
+- [2026-03-06_varstore-hop-align-server.md](2026-03-06_varstore-hop-align-server.md)
+- [2026-03-06_server-varstore-doc-errorcode-align.md](2026-03-06_server-varstore-doc-errorcode-align.md)
+- [2026-03-05_server-bump-subproto-varstore-v0.1.1.md](2026-03-05_server-bump-subproto-varstore-v0.1.1.md)
+- [2026-03-05_server-bump-subproto-auth-v0.1.1.md](2026-03-05_server-bump-subproto-auth-v0.1.1.md)
+- [2026-03-05_bump-subproto-file-v0.1.2.md](2026-03-05_bump-subproto-file-v0.1.2.md)
+- [2026-03-04_bump-subproto-file-v0.1.1.md](2026-03-04_bump-subproto-file-v0.1.1.md)
+- [2026-03-03_server-bump-management-v0.1.2.md](2026-03-03_server-bump-management-v0.1.2.md)
+- [2026-02-25_android-hubruntime-m0.md](2026-02-25_android-hubruntime-m0.md)
+- [2026-02-24_management-node-info.md](2026-02-24_management-node-info.md)
+- [2026-02-20_server-use-subproto-remaining-modules.md](2026-02-20_server-use-subproto-remaining-modules.md)
+- [2026-02-19_server-use-subproto-topicbus.md](2026-02-19_server-use-subproto-topicbus.md)
+- [2026-02-19_server-use-subproto-management.md](2026-02-19_server-use-subproto-management.md)
+- [2026-02-19_server-use-core-kit.md](2026-02-19_server-use-core-kit.md)
+- [2026-02-18_server-semver-deps.md](2026-02-18_server-semver-deps.md)
+- [2026-02-18_server-action-kit-coverage.md](2026-02-18_server-action-kit-coverage.md)
+- [2026-02-18_file-ctrl-inherit-ids.md](2026-02-18_file-ctrl-inherit-ids.md)
+- [2026-02-18_assist-up-notify-action-template.md](2026-02-18_assist-up-notify-action-template.md)
+- [2026-02-17_file-resp-major-ok.md](2026-02-17_file-resp-major-ok.md)
+- [2026-02-16_pending-msgid-traceid.md](2026-02-16_pending-msgid-traceid.md)
+- [2026-02-16_modules-defaultset.md](2026-02-16_modules-defaultset.md)
+- [2026-02-16_flow-subproto.md](2026-02-16_flow-subproto.md)
+- [2026-02-16_file-subproto.md](2026-02-16_file-subproto.md)
+- [2026-02-16_exec-flow-resp-major-ok.md](2026-02-16_exec-flow-resp-major-ok.md)
+- [2026-02-16_defaultset-buildtags.md](2026-02-16_defaultset-buildtags.md)
+- [2026-02-16_auth-subproto.md](2026-02-16_auth-subproto.md)
+- [2026-02-16_auth-direct-resp-major-ok.md](2026-02-16_auth-direct-resp-major-ok.md)
+- [2026-02-16_auth-assist-resp.md](2026-02-16_auth-assist-resp.md)
+- [2026-02-15_varstore-subproto.md](2026-02-15_varstore-subproto.md)
+- [2026-02-15_topicbus-subproto.md](2026-02-15_topicbus-subproto.md)
+- [2026-02-15_subproto-foundation.md](2026-02-15_subproto-foundation.md)
+- [2026-02-15_server-modules.md](2026-02-15_server-modules.md)
+- [2026-02-15_exec-subproto.md](2026-02-15_exec-subproto.md)
+- [2026-02-15_default-forward-subproto.md](2026-02-15_default-forward-subproto.md)
+- [2026-02-11_proto-extract.md](2026-02-11_proto-extract.md)
+- [2026-02-10_hdrtcp-v2.md](2026-02-10_hdrtcp-v2.md)
+- [2026-02-09_public-protocol.md](2026-02-09_public-protocol.md)
+

@@ -12,7 +12,7 @@
 ## 具体变更内容
 ### 新增
 - `subproto/exec/*`：承载 Exec 子协议实现（由原目录迁移而来）
-- `docs/plan_archive/plan_archive_2026-02-15_topicbus-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
+- `docs/plan/plan_archive_2026-02-15_topicbus-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
 
 ### 修改
 - `modules/hub.go`：默认模块集合改用 `subproto/exec`
@@ -53,4 +53,5 @@
 
 ## 回滚方案
 - 直接 `git revert` 本次合并的提交即可回滚（目录迁移与引用改动均在同一变更集内）。
+
 

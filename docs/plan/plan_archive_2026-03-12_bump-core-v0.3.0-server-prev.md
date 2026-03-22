@@ -43,7 +43,7 @@
 ## 3.1) 计划拆分（Checklist）
 
 ### SRV0 - 归档旧 plan（已执行）
-- 已执行：`git mv plan.md docs/plan_archive/plan_archive_2026-03-11_transport-pipe-prev.md`
+- 已执行：`git mv plan.md docs/plan/plan_archive_2026-03-11_transport-pipe-prev.md`
 - 回滚点：撤销该 `git mv`。
 
 ### SRV1 - 适配 Core 连接/读写抽象变更（Pipe）
@@ -111,4 +111,5 @@ $env:GOTMPDIR='d:\\project\\MyFlowHub3\\.tmp\\gotmp'
 New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null
 go test ./... -count=1 -p 1
 ```
+
 

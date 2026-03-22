@@ -49,8 +49,8 @@
 
 #### 可选（本 PR 如无额外风险）
 - 同步更新文档：
-  - `docs/6-flow.md`：明确 `flow.*_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
-  - `docs/7-exec.md`：明确 `exec.call_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
+  - `docs/specs/flow.md`：明确 `flow.*_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
+  - `docs/specs/exec.md`：明确 `exec.call_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
 
 #### 不做（本 PR）
 - 不改 `exec.call` 与 `flow.*` 请求帧（仍使用 `MajorCmd`）。
@@ -160,8 +160,8 @@
 
 ### RMO4 - 文档（可选）：补齐 Major 与转发边界说明
 - 涉及文件：
-  - `docs/6-flow.md`
-  - `docs/7-exec.md`
+  - `docs/specs/flow.md`
+  - `docs/specs/exec.md`
 - 验收条件：
   - 文档明确 `*_resp/call_resp` 为 `MajorOKResp`，依赖 Core 快转发。
 
@@ -178,4 +178,5 @@
 - 验收条件：
   - Review 覆盖：需求/架构/性能/安全/测试；
   - 归档包含：任务映射、关键决策、测试命令与回滚方案。
+
 

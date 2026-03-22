@@ -8,7 +8,7 @@
 
 本次目标：
 - 升级 Server 依赖的 `myflowhub-subproto/auth` 到 `v0.1.2`（修复公钥毒化 + up_login 自愈）；
-- 同步更新 `docs/2-auth.md`，避免继续误导旧行为。
+- 同步更新 `docs/specs/auth.md`，避免继续误导旧行为。
 
 ## 变更内容
 
@@ -20,7 +20,7 @@
 - `go.sum`
 
 ### 2) 文档更新
-- 更新 `docs/2-auth.md`：
+- 更新 `docs/specs/auth.md`：
   - `register`：缺省 `pubkey` 不再自动填本节点公钥；
   - `up_login`：补充 `sender_pub` 自愈策略与约束 `sender_id == hdr.SourceID == conn.meta(nodeID)`；
   - `auth.disable_persist=true`：明确不读写 `config/trusted_nodes.json`。
@@ -56,3 +56,4 @@ go test ./... -count=1 -p 1
 ## 回滚方案
 - 回退本仓 `go.mod/go.sum` 中 `myflowhub-subproto/auth` 版本至 `v0.1.1` 并重新发布；
 - 或发布后续 Server patch 修正。
+

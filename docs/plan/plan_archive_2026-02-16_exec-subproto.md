@@ -78,7 +78,7 @@
 3) dispatcher 按 `SubProto()==7` 分发到 handler，handler 内部按 `msg.Action` 找到 action entry 并处理
 
 ### 错误与安全
-- 不改变既有权限模型与逐级裁决规则（详见 `docs/7-exec.md`）。
+- 不改变既有权限模型与逐级裁决规则（详见 `docs/specs/exec.md`）。
 - 维持“不引入新权限点/不改默认路由语义”的安全默认。
 
 ### 性能与测试策略
@@ -145,3 +145,4 @@
 
 ## 执行记录
 - 2026-02-15：完成 EX1-EX5；回归 `go test ./... -count=1 -p 1` 通过。
+

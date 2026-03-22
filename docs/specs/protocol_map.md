@@ -3,7 +3,8 @@
 > 本文档为“半自动文档”：
 > - single source-of-truth：`protocol/*/types.go`
 > - **不要手工修改** `<!-- BEGIN GENERATED -->` 与 `<!-- END GENERATED -->` 中间的内容
-> - 更新方式：`go run ./cmd/protocolmapgen -write -out docs/protocol_map.md`
+> - canonical 生成入口位于 `MyFlowHub-Proto/docs/specs/protocol_map.md`
+> - 本仓库保留同步副本：`docs/specs/protocol_map.md`
 
 <!-- BEGIN GENERATED -->
 ## SubProto Overview
@@ -243,4 +244,5 @@
 
 ## Notes（Manual）
 - Auth：login/register 使用签名（ES256）+ nonce + timestamp（具体语义以实现侧为准；此处仅做提示）。
+
 

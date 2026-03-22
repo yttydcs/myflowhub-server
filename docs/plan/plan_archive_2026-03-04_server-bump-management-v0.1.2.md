@@ -42,7 +42,7 @@
 
 ### SVRMG0 - 归档旧 plan.md
 - 目标：避免历史 plan 覆盖本次任务。
-- 已执行：`plan.md` → `docs/plan_archive/plan_archive_2026-03-03_server-bump-management-v0.1.2-prev.md`
+- 已执行：`plan.md` → `docs/plan/plan_archive_2026-03-03_server-bump-management-v0.1.2-prev.md`
 - 验收条件：归档文件存在且可阅读。
 - 回滚点：撤销该移动提交。
 
@@ -74,4 +74,5 @@
 - 目标：记录发布与依赖升级过程、测试与回滚方式。
 - 涉及文件：
   - `docs/change/2026-03-03_server-bump-management-v0.1.2.md`
+
 

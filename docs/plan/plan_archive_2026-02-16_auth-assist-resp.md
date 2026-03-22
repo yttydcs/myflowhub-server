@@ -8,7 +8,7 @@
 - 约束：commit 信息使用中文（前缀如 `fix:` 可英文）
 
 ## 当前状态（事实）
-- 文档 `docs/2-auth.md` 定义了 `assist_register_resp`、`assist_login_resp` 等响应动作。
+- 文档 `docs/specs/auth.md` 定义了 `assist_register_resp`、`assist_login_resp` 等响应动作。
 - 代码 `subproto/auth` 当前会发送 `assist_register_resp` / `assist_login_resp`（权威节点处理 `assist_*` 时）。
 - 但 `subproto/auth` 的 action 注册仅包含 `register_resp` / `login_resp`，缺少对上述 `assist_*_resp` 的接收处理：在“非权威节点向上 assist，请求返回时”的链路下，响应会被当作 unknown action 丢弃，导致下游设备/子节点得不到 `*_resp`。
 
@@ -144,4 +144,5 @@
 - 2026-02-16：确认 plan.md，进入 3.2；环境准备（不进 git）：在 `worktrees/pr7-auth-assist-resp/` 下创建 `MyFlowHub-Core`、`MyFlowHub-Proto` Junction 指向 `repo/`，满足 `go.mod replace ../MyFlowHub-*`。
 - 2026-02-16：完成 AR1/AR2（补齐 `assist_*_resp` action + 单测）；提交：`5094e26`。
 - 2026-02-16：完成 AR3（Windows 回归通过）：`go test ./... -count=1 -p 1`。
+
 

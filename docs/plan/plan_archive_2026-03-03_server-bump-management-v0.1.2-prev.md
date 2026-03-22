@@ -68,7 +68,7 @@
 
 ### SRV0 - 归档旧 plan（已执行）
 - 目标：保留历史 plan，避免覆盖。
-- 已执行：`plan.md` → `docs/plan_archive/plan_archive_2026-02-20_server-subproto-modules-all.md`
+- 已执行：`plan.md` → `docs/plan/plan_archive_2026-02-20_server-subproto-modules-all.md`
 - 回滚点：撤销 `git mv`。
 
 ### SRV1 - 新增可嵌入 Hub Runtime（Go）
@@ -153,4 +153,5 @@ New-Item -ItemType Directory -Force -Path $env:GOTMPDIR | Out-Null
 go test ./... -count=1 -p 1
 go test ./tests -run TestRootHubPing -count=1
 ```
+
 

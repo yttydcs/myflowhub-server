@@ -14,7 +14,7 @@
   - `go.mod`：`github.com/yttydcs/myflowhub-subproto/management v0.1.1` → `v0.1.2`
   - `go.sum`：同步更新 checksum
 - 审计与交接：
-  - 归档旧 `plan.md`：`docs/plan_archive/plan_archive_2026-03-03_server-bump-management-v0.1.2-prev.md`
+  - 归档旧 `plan.md`：`docs/plan/plan_archive_2026-03-03_server-bump-management-v0.1.2-prev.md`
   - 更新 `plan.md` 为本次发布/升级 workflow 计划
 
 ## Plan 任务映射
@@ -43,4 +43,5 @@
     - `GOWORK=off go mod tidy`
 - Tag（高风险）：
   - 原则上不删除已推送 tag；若必须删除，需先确认未被任何下游消费，并同步通知相关仓库/CI。
+
 

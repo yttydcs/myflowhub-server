@@ -22,11 +22,11 @@
 ## 可执行任务清单（Checklist）
 
 ### SRV-AUTH-1 更新 auth 文档（与实现一致）
-- 目标：更新 `docs/2-auth.md`：
+- 目标：更新 `docs/specs/auth.md`：
   - 修正 `register`：`pubkey` 缺失不再自动填本节点公钥；
   - 说明 `up_login` sender 公钥自愈策略（触发条件/约束/审计日志）；
   - 明确 `auth.disable_persist=true` 的读写语义（如 SubProto 已对齐）。
-- 涉及模块/文件：`docs/2-auth.md`
+- 涉及模块/文件：`docs/specs/auth.md`
 - 验收条件：文档描述与 `myflowhub-subproto/auth` 行为一致。
 - 测试点：人工审阅 + 结合关键代码路径交叉检查。
 - 回滚点：回退文档提交。
@@ -51,3 +51,4 @@
 - 验收条件：文档映射 SRV-AUTH-1~SRV-AUTH-3，且包含验证步骤。
 - 测试点：文档中的验证命令可执行。
 - 回滚点：文档可独立回退，不影响功能代码。
+
