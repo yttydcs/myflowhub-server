@@ -2,7 +2,7 @@
 
 ## 背景 / 目标
 
-Auth 协议文档 `docs/2-auth.md` 明确存在并使用以下动作：
+Auth 协议文档 `docs/specs/auth.md` 明确存在并使用以下动作：
 
 - `assist_register_resp`
 - `assist_login_resp`
@@ -85,4 +85,5 @@ Windows：
 ### 回滚方案
 
 - 回滚提交：`git revert 5094e26`（移除 `assist_*_resp` 的 action 注册与单测）
+
 

@@ -12,13 +12,13 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 ## 具体变更内容（新增 / 修改 / 删除）
 ### 新增
 - `subproto/auth/*`：承载 Auth 子协议实现（由原目录迁移而来）
-- `docs/plan_archive/plan_archive_2026-02-16_file-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
+- `docs/plan/plan_archive_2026-02-16_file-subproto.md`：归档上一轮 workflow 的计划文档，确保可审计
 
 ### 修改
 - `modules/hub.go`：默认模块集合改用 `subproto/auth`
 - `subproto/auth/types.go`：协议常量/类型改为直接依赖 `github.com/yttydcs/myflowhub-proto/protocol/auth`
 - `tests/*`：import 路径切换到 `subproto/auth`
-- `docs/2-auth.md`：实现路径描述更新为 `subproto/auth`（语义不变）
+- `docs/specs/auth.md`：实现路径描述更新为 `subproto/auth`（语义不变）
 - `plan.md`：更新为本次 workflow 的计划、验收标准与执行记录
 
 ### 删除
@@ -29,7 +29,7 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 - AU1：迁移 auth 到 `subproto/auth`
 - AU2：`subproto/auth` 直连 `MyFlowHub-Proto` 协议包
 - AU3：modules + tests 引用切换到新路径
-- AU4：文档路径同步（`docs/2-auth.md`）
+- AU4：文档路径同步（`docs/specs/auth.md`）
 - AU5：全量回归
 - AU6：Code Review + 归档变更（本文档）
 
@@ -65,4 +65,5 @@ MyFlowHub-Server 的部分子协议实现位于 `internal/handler/*`，只能在
 - 可扩展性与配置化：通过（迁移到 `subproto/*` 后更易拆库/裁切；`modules` 装配保持集中）。
 - 稳定性与安全：通过（不改签名/持久化/权限/路由语义；安全默认不变）。
 - 测试覆盖：通过（`go test ./... -count=1 -p 1` 在 Windows 通过；含单测与 integration）。
+
 

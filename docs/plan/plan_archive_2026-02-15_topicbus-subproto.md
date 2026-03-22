@@ -10,7 +10,7 @@
 ## 当前状态
 - TopicBus 子协议实现位于 `internal/handler/topicbus/`，只能在本仓库内部引用。
 - `modules/hub.go` 与 `tests/topicbus_handler_test.go` 直接 import `internal/handler/topicbus`。
-- 文档 `docs/4-topicbus.md` 明确引用当前实现路径；迁移后需要同步更新。
+- 文档 `docs/specs/topicbus.md` 明确引用当前实现路径；迁移后需要同步更新。
 
 > 环境备注（不进 git）：本仓库 `go.mod` 使用 `replace ../MyFlowHub-Core`、`../MyFlowHub-Proto`。  
 > 在本 worktree 布局下，需要在 `d:\project\MyFlowHub3\worktrees\pr2-server-topicbus\` 下存在同名目录。  
@@ -30,7 +30,7 @@
 - 更新测试 import：
   - `tests/topicbus_handler_test.go`
 - 更新文档：
-  - `docs/4-topicbus.md`（实现路径与集成提示）
+  - `docs/specs/topicbus.md`（实现路径与集成提示）
 - 清理：删除 `internal/handler/topicbus` 目录，确保仓库内不再引用该路径。
 - 回归：`go test ./... -count=1 -p 1` 通过（Windows）。
 
@@ -156,7 +156,7 @@
 - 回滚点：revert。
 
 ### TB5 - 文档同步更新
-- 目标：`docs/4-topicbus.md` 更新实现路径与集成提示为 `subproto/topicbus`。
+- 目标：`docs/specs/topicbus.md` 更新实现路径与集成提示为 `subproto/topicbus`。
 - 验收条件：文档不再提及 `internal/handler/topicbus`。
 - 回滚点：revert。
 
@@ -180,3 +180,4 @@
 
 ## 执行记录
 - 2026-02-15：完成 TB1-TB7；回归 `go test ./... -count=1 -p 1` 通过。
+

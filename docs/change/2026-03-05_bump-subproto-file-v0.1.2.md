@@ -6,7 +6,7 @@
   - Server 作为装配层，需要升级依赖并同步协议文档，避免实现与文档漂移。
 - 目标：
   1) Server 依赖升级到 `v0.1.2`；
-  2) `docs/5-file.md` 补充 `op=mkdir` 说明；
+  2) `docs/specs/file.md` 补充 `op=mkdir` 说明；
   3) 完成回归验证。
 
 ## 具体变更内容
@@ -16,7 +16,7 @@
   - `github.com/yttydcs/myflowhub-subproto/file`：
     - `v0.1.1` -> `v0.1.2`
 
-- `docs/5-file.md`
+- `docs/specs/file.md`
   - `action=write` 章节扩展为 `offer/mkdir`；
   - 新增 `op=mkdir` 的请求/响应字段说明、语义约束与典型流程。
 
@@ -56,4 +56,5 @@ go test ./... -count=1
 
 ### 回滚
 - 将依赖回退至 `v0.1.1`，并回滚文档对应段落。
+
 

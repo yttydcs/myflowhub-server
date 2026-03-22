@@ -1,12 +1,12 @@
 # Server VarStore 文档错误码勘误（`404` -> `4`）
 
 ## 变更背景 / 目标
-- 背景：`docs/3-varstore.md` 中“错误码约定”定义未找到为 `4`，但示例写成 `404`，存在歧义。
+- 背景：`docs/specs/varstore.md` 中“错误码约定”定义未找到为 `4`，但示例写成 `404`，存在歧义。
 - 目标：统一文档语义，明确未命中响应码为 `4`，与现有实现保持一致。
 
 ## 具体变更内容
 - 修改：
-  - `docs/3-varstore.md`
+  - `docs/specs/varstore.md`
     - `get_resp` 未命中示例从 `{"code":404,"msg":"not found"}` 调整为 `{"code":4,"msg":"not found"}`。
 - 新增：
   - 本归档文档。
@@ -22,7 +22,7 @@
   - 风险控制：避免在同一 workflow 混入行为改动。
 
 ## 测试与验证方式 / 结果
-- 执行：`rg -n "404" docs/3-varstore.md`
+- 执行：`rg -n "404" docs/specs/varstore.md`
   - 结果：无命中，确认该文档内不再出现错误示例码。
 
 ## Code Review 结论（3.3）
@@ -36,4 +36,5 @@
 
 ## 潜在影响与回滚方案
 - 潜在影响：无运行时影响，正向提升客户端实现一致性。
-- 回滚方案：回滚 `docs/3-varstore.md` 与本归档文件即可。
+- 回滚方案：回滚 `docs/specs/varstore.md` 与本归档文件即可。
+

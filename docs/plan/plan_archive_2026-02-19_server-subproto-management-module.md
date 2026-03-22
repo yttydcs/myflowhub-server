@@ -40,7 +40,7 @@
 ### SRVMGMT0 - 归档旧 plan
 - 目标：归档上一轮 PR1 的 `plan.md`，避免覆盖。
 - 涉及文件：
-  - `docs/plan_archive/plan_archive_2026-02-19_server-use-core-kit.md`
+  - `docs/plan/plan_archive_2026-02-19_server-use-core-kit.md`
 - 验收条件：旧 plan 已归档且可阅读。
 - 回滚点：撤销本次 `git mv`。
 
@@ -90,4 +90,5 @@ GOWORK=off go test ./... -count=1 -p 1
   - 堆叠 PR：本 PR2 基于 PR1 分支，合并顺序必须是 PR1 → PR2（否则 main 无法直接 fast-forward）。
 - 注意：
   - commit 信息使用中文（允许 `refactor:`/`docs:` 等英文前缀）。
+
 

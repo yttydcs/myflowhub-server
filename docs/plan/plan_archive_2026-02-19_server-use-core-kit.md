@@ -39,7 +39,7 @@
 ### SRVKIT0 - 归档旧 plan
 - 目标：避免覆盖上一轮 action-kit workflow 的 `plan.md`，保留可审计回放。
 - 涉及文件：
-  - `docs/plan_archive/plan_archive_2026-02-19_server-action-kit.md`
+  - `docs/plan/plan_archive_2026-02-19_server-action-kit.md`
 - 验收条件：旧 plan 已归档且可阅读。
 - 回滚点：撤销本次 `git mv`。
 
@@ -95,4 +95,5 @@ GOWORK=off go test ./... -count=1 -p 1
   - 若遗漏某处 import，将导致 “同时存在旧包路径/新包路径” 或编译失败；需用 `rg` 全量检查。
 - 注意：
   - commit 信息使用中文（允许 `refactor:`/`docs:` 等英文前缀）。
+
 

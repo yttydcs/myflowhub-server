@@ -46,7 +46,7 @@
 
 #### 可选（本 PR 如无额外风险）
 - 同步更新文档：
-  - `docs/5-file.md`：明确 `read_resp/write_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
+  - `docs/specs/file.md`：明确 `read_resp/write_resp` 使用 `MajorOKResp`，依赖 Core 快速转发。
 
 #### 不做（本 PR）
 - 不改 `read/write` 请求帧（仍使用 `MajorCmd`）。
@@ -141,7 +141,7 @@
 ### FMO3 - 文档：补齐 File Major 与转发边界说明
 - 目标：让文档与统一框架规则一致，便于后续接手者理解。
 - 涉及文件：
-  - `docs/5-file.md`
+  - `docs/specs/file.md`
 - 验收条件：
   - 文档明确：
     - 请求帧（CTRL：`read/write`）使用 `MajorCmd`
@@ -162,3 +162,4 @@
 - 验收条件：
   - Review 覆盖：需求/架构/性能/安全/测试；
   - 归档包含：任务映射、关键决策、测试命令与回滚方案。
+

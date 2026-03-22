@@ -39,7 +39,7 @@
 ### SRVTB0 - 归档旧 plan
 - 目标：归档上一轮 PR2 的 `plan.md`，避免覆盖。
 - 涉及文件：
-  - `docs/plan_archive/plan_archive_2026-02-19_server-subproto-management-module.md`
+  - `docs/plan/plan_archive_2026-02-19_server-subproto-management-module.md`
 - 验收条件：旧 plan 已归档且可阅读。
 - 回滚点：撤销本次 `git mv`。
 
@@ -90,4 +90,5 @@ GOWORK=off go test ./... -count=1 -p 1
   - 堆叠 PR：本 PR3 基于 PR2 分支，合并顺序必须是 PR2 → PR3。
 - 注意：
   - commit 信息使用中文（允许 `refactor:`/`docs:` 等英文前缀）。
+
 

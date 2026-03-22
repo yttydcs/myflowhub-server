@@ -16,11 +16,11 @@ Worktree：`d:\project\MyFlowHub3\worktrees\file-resp-major-okresp`
 ### 修改
 - `subproto/file/handler.go`
   - `sendCtrlToNode` 构造的 HeaderTcp：`Major` 从 `MajorCmd` 改为 `MajorOKResp`（覆盖 `read_resp/write_resp`）。
-- `docs/5-file.md`
+- `docs/specs/file.md`
   - 补齐 Major 约定：请求（CTRL `read/write`）为 `MajorCmd`；响应（CTRL `read_resp/write_resp`）为 `MajorOKResp`；`DATA/ACK` 为 `MajorMsg`；失败响应仍使用 `MajorOKResp`（错误在 payload `code/msg`）。
 - `plan.md`
   - 本 workflow 的需求/架构/拆分计划（便于审计与接手）。
-- `docs/plan_archive/plan_archive_2026-02-16_exec-flow-resp-major-ok.md`
+- `docs/plan/plan_archive_2026-02-16_exec-flow-resp-major-ok.md`
   - 归档上一轮计划（避免覆盖历史）。
 
 ### 新增
@@ -30,7 +30,7 @@ Worktree：`d:\project\MyFlowHub3\worktrees\file-resp-major-okresp`
 ## plan.md 任务映射
 - FMO1：File `read_resp/write_resp` → `MajorOKResp`
 - FMO2：单测断言 File 响应帧 Major
-- FMO3：更新 `docs/5-file.md` 的 Major 约定与转发边界
+- FMO3：更新 `docs/specs/file.md` 的 Major 约定与转发边界
 - FMO4：Windows 回归 `go test ./...`
 - FMO5：Code Review + 归档
 
@@ -54,4 +54,5 @@ Worktree：`d:\project\MyFlowHub3\worktrees\file-resp-major-okresp`
   - 若中间节点关闭 Core 快速转发（`routing.forward_remote=false`），响应帧将无法跨节点返回（符合该配置语义，但可能影响联调/排障）。
 - 回滚：
   - revert 本次提交即可恢复 `MajorCmd` 行为。
+
 

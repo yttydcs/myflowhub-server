@@ -32,7 +32,7 @@
   - 默认启用集合中 management handler 的 import 切换为 `subproto/management`（其余子协议仍保持 `internal/handler/*`，遵循小步迁移策略）。
 - `tests/integration_root_hub_ping_test.go`
   - 更新 management import path 以覆盖迁移后的 `node_echo` 链路。
-- `docs/2-auth.md`
+- `docs/specs/auth.md`
   - 更新说明：login_server 旧流程已移除（避免误导）。
 
 ## plan.md 任务映射
@@ -64,4 +64,5 @@
   2) 回滚 “新增 subproto/kit”
   3) 回滚 “移除 login_server”
   - 或直接整体 revert 本 PR 合并提交
+
 

@@ -49,7 +49,7 @@
 
 ### SRVALL0 - 归档旧 plan
 - 目标：保留上一轮 topicbus 拆分 plan，避免覆盖。
-- 已执行（可审计）：`git mv plan.md docs/plan_archive/plan_archive_2026-02-20_server-subproto-topicbus-module.md`
+- 已执行（可审计）：`git mv plan.md docs/plan/plan_archive_2026-02-20_server-subproto-topicbus-module.md`
 - 验收条件：归档文件存在且可阅读。
 - 回滚点：撤销该 `git mv`。
 
@@ -109,4 +109,5 @@ go test ./tests -run TestRootHubPing -count=1
 
 ### SRVALL7 - push 分支（便于合并）
 - `git push -u origin refactor/subproto-modules-all`
+
 

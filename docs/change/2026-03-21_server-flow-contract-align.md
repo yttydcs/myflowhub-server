@@ -2,7 +2,7 @@
 
 ## 变更背景 / 目标
 - 背景：
-  - `flow` 的 `run/status/list/get` 已有稳定 proto/handler，但 `docs/6-flow.md` 仍未完整描述。
+  - `flow` 的 `run/status/list/get` 已有稳定 proto/handler，但 `docs/specs/flow.md` 仍未完整描述。
   - DAG 节点的正式写入契约已收敛到 `kind=call`，文档仍把 `local/exec` 当作正式格式。
 - 目标：
   - 补齐 `run/status/list/get` 契约。
@@ -10,7 +10,7 @@
 
 ## 具体变更内容（新增 / 修改 / 删除）
 ### 修改
-- `docs/6-flow.md`
+- `docs/specs/flow.md`
   - 补充 `run/status/list/get` 的请求字段、响应字段、执行语义与错误说明。
   - 明确 `flow_id` 为 UUID，并要求通过格式校验。
   - 将 DAG 节点的正式写入契约改为 `kind=call`。
@@ -26,7 +26,7 @@
 ## 对应 plan.md 任务映射
 - `DOC-1`：完成（`run/status/list/get` 契约已补齐）。
 - `DOC-2`：完成（正式写入契约与历史兼容边界已明确）。
-- `DOC-3`：完成（已核对 `docs/protocol_map.md`，本次无需改动）。
+- `DOC-3`：完成（已核对 `docs/specs/protocol_map.md`，本次无需改动）。
 
 ## 关键设计决策与权衡（尤其性能 / 扩展性）
 1. 文档以当前 proto/handler 的稳定行为为准，不额外发明新语义。
@@ -51,11 +51,12 @@
 - 文档现在显式写出 `run/status/list/get` 无额外独立权限，这与当前实现一致；若未来权限模型收紧，需要再同步文档。
 
 ### 回滚方案
-- 直接回滚 `docs/6-flow.md` 本次改动即可。
+- 直接回滚 `docs/specs/flow.md` 本次改动即可。
 
 ## 子Agent执行轨迹
 - 无子Agent。
 - Task ID → Agent → Worktree → 文件 → 验收结果：
-  - `DOC-1` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/6-flow.md` → 通过
-  - `DOC-2` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/6-flow.md` → 通过
-  - `DOC-3` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/protocol_map.md`（核对，无变更） → 通过
+  - `DOC-1` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/specs/flow.md` → 通过
+  - `DOC-2` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/specs/flow.md` → 通过
+  - `DOC-3` → 主Agent → `D:\project\MyFlowHub3\worktrees\server-subproto-contract-spec` → `docs/specs/protocol_map.md`（核对，无变更） → 通过
+

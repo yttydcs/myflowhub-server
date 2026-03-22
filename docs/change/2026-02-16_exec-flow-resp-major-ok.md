@@ -22,7 +22,7 @@ Worktree：`d:\project\MyFlowHub3\worktrees\resp-major-okresp`
   - `sendCtrlToNode` 构造的 HeaderTcp：`Major` 从 `MajorCmd` 改为 `MajorOKResp`（覆盖所有 `flow.*_resp` 的发送点）。
 - `tests/test_stubs.go`
   - `stubServer.Send(...)` 记录发送帧的 `hdr.Major()`，用于断言响应帧 Major。
-- `docs/6-flow.md`、`docs/7-exec.md`
+- `docs/specs/flow.md`、`docs/specs/exec.md`
   - 补充 Major 约定：请求帧 `MajorCmd`、响应帧 `MajorOKResp`，并说明失败也使用 `MajorOKResp`（错误在 payload 的 `code/msg`）。
 
 ### 新增
@@ -57,4 +57,5 @@ Worktree：`d:\project\MyFlowHub3\worktrees\resp-major-okresp`
   - mixed-version 网络中，旧节点若仍发送 `MajorCmd` 的 `*_resp/call_resp`，其跨节点转发行为与新节点不一致（本变更按 big-bang 执行）。
 - 回滚：
   - 直接 revert 本次提交即可恢复 `MajorCmd` 行为。
+
 
