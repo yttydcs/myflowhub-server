@@ -1,97 +1,91 @@
-核心框架详解
-============
+核心框架详解（对齐 Core v0.4.7）
+==============================
+
+范围
+----
+- 本文描述 `MyFlowHub-Server` 当前依赖的 `MyFlowHub-Core v0.4.7` 实际行为。
+- 若文档与代码不一致，以代码为准。
 
 接收链路（RX Pipeline）
 ----------------------
-1) **Listener 接入**：`IListener.Listen` 接受新连接，包装为 `IConnection`，加入 `ConnManager`，触发 OnListen。
-2) **Reader 解帧**：`IReader.ReadLoop` 从底层连接读取，使用 `HeaderCodec` 解出 `hdr/payload`，调用 `conn.DispatchReceive`，最终触发 `Process.OnReceive`。
-3) **Process 组合**：常用组合为 `PreRoutingProcess`（base）+ `DispatcherProcess`：
-   - Dispatcher 将事件放入内部 channel，worker 取出执行。
-   - worker 内先调用 `preRoute`（如果 base 实现了 `PreRoute`，如 PreRoutingProcess），返回 false 则终止，不再分发到子协议。
-   - 返回 true 时，按 SubProto 选择已注册的 handler 调用 `OnReceive`。
-4) **PreRouting 核心规则（现实现）**：
-   - SourceID=0 且 SubProto!=2：丢弃（未登录非登录协议）。
-   - SubProto=2：直接放行 dispatcher。
-   - MajorCmd：**不做自动转发/广播**，直接放行 dispatcher（逐跳可见；是否继续转发由子协议 handler 决定）。
-   - MajorMsg / MajorOKResp / MajorErrResp（数据面/响应）：
-     - target==0：广播给子节点（不回父），返回 false。不要将 0 作为“上送父节点”。
-     - target!=local：按节点索引/父链转发，返回 false（子协议 handler 不会执行）。
-     - target==local：返回 true，交给 Dispatcher 调用子协议。
-   - hop_limit：仅在发生“转发/广播”（数据面）时递减；耗尽则丢弃（防环/防风暴）。
+1) `IListener.Listen` 接入连接并加入 `ConnManager`，触发 `Process.OnListen`。  
+2) `IReader.ReadLoop` 从 `conn.Pipe()` 读取字节流，解帧后调用 `conn.DispatchReceive`。  
+3) `Server` 为连接注册回调，将收包事件交给 `Process.OnReceive`。  
+4) 常见组合：`PreRoutingProcess`（base） + `DispatcherProcess`：  
+   - Dispatcher 入队后由 worker 执行 `route`；  
+   - `route` 顺序为：`selectHandler` -> `sourceMismatch` -> `preRoute` -> `handler.OnReceive`（按条件）。  
+
+说明：`TCPReader` 只是历史命名，当前已是传输无关 reader（底层统一走 `Pipe`）。
+
+PreRouting 与 HeaderRouter（当前实现）
+------------------------------------
+- Header-only 决策由 `HeaderRouter.Decide` 给出：
+  - `SourceID==0 && SubProto!=2`：丢弃；
+  - `SubProto==2`：放行（登录协议）；
+  - `MajorCmd`：放行到 handler（逐跳可见）；
+  - `TargetID==0`：广播给子节点（不回父）；
+  - `TargetID!=local`：快速转发；
+  - 其他：本地分发。
+- `PreRoutingProcess` 执行具体转发动作：
+  - 广播与快速转发都先克隆 header，再递减 `hop_limit`；
+  - `hop_limit==0` 时按默认值补齐；`<=1` 视为耗尽并丢弃；
+  - `routing.forward_remote=false` 时，跨节点帧直接丢弃；
+  - 来自父连接且目标不可达时，不会再回父。
 
 SourceID 一致性校验（Dispatcher.sourceMismatch）
 -----------------------------------------------
-- Dispatcher 在进入子协议 handler 前，会进行一次 `SourceID` 一致性校验（可被 handler 覆盖）。
-- 目的：避免连接伪造任意 `SourceID`（在树形网络里用于权限、审计、路由一致性等）。
-- 例外：登录/注册等阶段可能尚未绑定 nodeID，相关 handler 可通过 `AllowSourceMismatch()=true` 放行。
-
-推荐校验规则（拟全局生效）
-------------------------
-> 该规则用于支持“端到端 SourceID 穿越多跳”（例如文件传输 DATA/ACK 直达目标、控制帧上送 LCA 判权）。
-
-- 若 `handler.AllowSourceMismatch()==true`：跳过校验（保持现有行为）。
-- 否则要求连接已登录：`conn.meta(nodeID)!=0`。
-- 若 `hdr.SourceID == conn.meta(nodeID)`：放行（最常见的逐跳发送）。
-- 否则根据连接角色：
-  - `role=parent`：放行（子节点无条件信任父节点；父节点可代表子树下发控制/缓存）。
-  - `role=child`：仅当 `ConnManager.GetByNode(hdr.SourceID)` 映射到该连接时放行（`SourceID` 为该子连接背后的后代节点）。
-- 依赖：登录协议需要把“后代 nodeID → 该 child 连接”的索引逐级同步到祖先节点（例如 `up_login`）。
+- 校验发生在进入 handler 之前（在 `preRoute` 之前）。
+- 放行规则：
+  - `handler.AllowSourceMismatch()==true`：放行；
+  - 连接未绑定 `nodeID`（`meta nodeID==0`）：拒绝；
+  - `hdr.SourceID == conn.meta(nodeID)`：放行；
+  - 连接角色是 `role=parent`：放行；
+  - 子连接场景下，仅当 `ConnManager.GetByNode(hdr.SourceID)` 映射到当前连接时放行；
+  - 其余情况拒绝。
 
 发送链路（TX Pipeline）
 ----------------------
-1) 入口：`server.Send(ctx, connID, hdr, payload)`。
-2) 调用 `Process.OnSend` 钩子（仅一次），若返回错误则终止。
-3) 若启用 `SendDispatcher`：
-   - 事件放入 dispatcher channel，按连接映射到 per-connection writer，串行写出。
-   - 支持 shard/worker 并行、入队超时、连接级缓冲。
-4) 未启用 SendDispatcher 时，直接调用 `SendWithHeader` 发送（同步，阻塞至写完）。
+1) 入口：`server.Send(ctx, connID, hdr, payload)`。  
+2) 安全默认：若 `hop_limit/trace_id` 未设置，自动补默认值。  
+3) 调用 `Process.OnSend`（每次 `Send` 一次）。  
+4) 默认通过 `SendDispatcher` 入队：  
+   - 按连接映射到 per-connection writer，单连接串行写；  
+   - 支持 shard+worker、入队超时、连接级缓冲；  
+   - writer 最终写 `conn.Pipe()`（`WriteFrame`），不是直接写 `net.Conn`。  
+5) 仅在 dispatcher 不可用时才回退到 `conn.SendWithHeader`。
 
 上下文与 Server 注入
 -------------------
-- `core.WithServerContext(ctx, srv)` 将 server 放入 context；handler 可用 `core.ServerFromContext(ctx)` 获取 srv/ConnManager/NodeID。
-- Server.Start 包装了全局 ctx，Reader/Process 调用时 ctx 中有 server。手动调用 handler 时需自行注入，否则会 fallback 到直接写连接。
+- `Server.Start` 会将 `srv` 注入 context（`core.WithServerContext`）。
+- handler/工具函数可通过 `core.ServerFromContext(ctx)` 获取 `IServer`。
+- 手动调用 handler 时若未注入 server context，会失去统一发送/路由能力（通常回退直写连接）。
 
-路由与默认转发
---------------
-- DefaultForwardHandler 仅在 Dispatcher 找不到子协议 handler 时触发，用于按配置将未知子协议转发到父/指定节点。
-- PreRouting 的跨节点转发发生在 Dispatcher 之前，返回 false 短路子协议处理。
-
-Major 与子协议处理
+默认转发与兜底处理
 ------------------
-- 框架对 Major 做统一约束（用于“控制面/数据面”分离与减少 Core 协议特例）：
-  - `MajorCmd`：控制面，**必须进入 handler（逐跳可见）**；Core 不做自动转发/广播。
-  - `MajorMsg` / `MajorOKResp` / `MajorErrResp`：数据面/响应，优先走 Core 快速转发；仅 `target==local` 才进入 handler。
-- 协议仍可在 payload 内定义更细的帧类型（例如 `file` 的 CTRL/DATA/ACK），但“是否逐跳可见”应优先通过 Major 表达。
-- `AcceptCmd()`：旧扩展点（在 Cmd 被 Core 转发的时代用于“转发后仍本地处理一次”）；在 `MajorCmd` 统一逐跳规则下通常不再需要（保留兼容）。
+- `DefaultForwardHandler` 仅在 Dispatcher 找不到该 `SubProto` 的 handler 时触发。
+- PreRouting 发生在 handler 之前；若 PreRouting 已完成转发并返回 false，正常不会进入 handler。
+- 兼容扩展：当 `preRoute=false` 且 `MajorCmd`，若 handler 声明 `AcceptCmd()==true`，仍可本地处理一次。
 
-注册与分发
-----------
-- 通过 `DispatcherProcess.RegisterHandler(ISubProcess)` 按 SubProto 注册；每个 SubProto 仅可注册一个 handler。
-- Default handler 可注册一次，用于兜底未知子协议。
-- Dispatcher 使用 worker+channel 解耦收包与处理，避免阻塞 Reader。
-
-连接管理
---------
-- `ConnManager` 维护连接表，支持按 connID/nodeID/deviceID 索引；提供 Range/Broadcast/CloseAll 等。
-- 登录流程会在连接元数据中写入 `nodeID/deviceID`，用于路由与索引。
+连接模型与演进状态
+------------------
+- `IConnection` 现为 `Pipe` 模型，不再以 `RawConn` 为核心抽象。
+- Core v0.4.x 已引入 `ILink/ILinkManager` 与 `HeaderRouter` 收敛路由决策。
+- Server 当前仍主要通过 `IConnectionManager` 工作，但与 Link 抽象保持兼容路径。
 
 父链与自动重连
 --------------
-- Server 根据配置 `parent.enable/parent.addr` 维护父连接，断线自动重连（`parent.reconnect_sec`）。父连接的 meta 标记为 `role=parent`。
+- `parent.enable=true` 且 `parent.addr` 非空时，Server 维护父连接并自动重连。
+- 重连间隔由 `parent.reconnect_sec` 控制。
+- 父连接会写入 `meta role=parent`，参与 source 校验与转发判定。
 
 关键默认值/约束
 ---------------
-- SourceID=0 的非登录协议默认被 PreRouting 丢弃。
-- `MajorCmd` 帧默认会进入子协议 handler（逐跳）。
-- 对 `MajorMsg/OK/Err`：target!=local 的帧默认不会进入子协议 handler（走 Core 快速转发）。
-- 发送时 OnSend 仅执行一次（即便广播）。
-
-扩展点提示
-----------
-- 若需要“数据面（MajorMsg/OK/Err）在 target!=local 时也进 handler 再转发”，需调整 PreRouting/Dispatcher（否则默认走 Core 快速转发）。
-- 控制面（MajorCmd）已默认逐跳可见；若某协议希望端到端直达，请不要使用 MajorCmd（或在 handler 内做显式转发并明确 hop_limit 策略）。
+- SourceID=0 的非登录协议默认丢弃。
+- `MajorCmd` 默认逐跳可见（进入 handler）。
+- `MajorMsg/OK/Err` 在 `target!=local` 时优先走 Core 快速转发。
+- 发送时 `OnSend` 按 `Send` 调用次数执行，不按广播目标数重复执行审计。
 
 快速参考：典型收发路径
 ---------------------
-1) 收：Listener→Reader→Process.OnReceive→Dispatcher.worker→PreRoute（可能转发/丢弃）→子协议 handler。
-2) 发：server.Send→Process.OnSend→SendDispatcher（可选）→net.Conn.Write / SendWithHeader。***
+1) 收：`Listener -> Reader(Pipe) -> DispatchReceive -> Process.OnReceive -> Dispatcher.route -> preRoute -> handler`。  
+2) 发：`server.Send -> OnSend -> SendDispatcher -> conn.Pipe() 写帧`。
