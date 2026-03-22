@@ -1,210 +1,205 @@
-flow 协议（SubProto=6）规范（草案）
-=============================
+flow 协议（SubProto=6）规范
+===========================
 
 范围
 ----
-- `flow` 子协议用于在任意节点上保存/触发/调度一个“有向无环图（DAG）工作流”。
-- 本协议只定义“工作流编排与调度”：
-  - 工作流的**实际执行者**固定为接收 `flow.set` 的节点（该节点需要实现 `flow` 协议）。
-  - DAG 节点的执行方式：对 DAG 进行拓扑排序并逐个执行（可失败节点可继续，不可失败节点失败则立即终止）。
-- “跨节点的特殊能力调用”不由 `flow` 直接承载，使用 `exec` 子协议（SubProto=7）。
+
+- `flow` 子协议用于在任意节点上保存、触发和调度一个 DAG 工作流。
+- 本协议同时定义：
+  - 工作流定义与调度动作（`set/delete/run/status/list/get`）
+  - 节点执行语义
+  - 节点间数据传递模型
+- 第一版数据流增强后的正式节点类型为：
+  - `call`
+  - `compose`
+- `exec`（SubProto=7）继续负责远程方法调用与权限裁决；`flow` 不复制 `exec.call` 的路由与权限模型。
 
 总览
 ----
+
 - 控制帧编码：UTF-8 JSON，envelope 固定为 `{"action":"...","data":{...}}`
 - 典型动作：
   - `set`：设置/更新工作流（需要权限 `flow.set`）
   - `delete`：删除工作流（需要权限 `flow.delete`）
   - `run`：手动触发一次运行
-  - `status`：查询运行状态
+  - `status`：查询运行状态摘要
   - `list`：列出执行者当前已知的工作流摘要
   - `get`：读取指定工作流定义
-- 触发器（当前）：支持 `interval` / `event` / `var_changed`。
-  - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动，按 `event_mode` + `event_name`/`event_topic` 匹配。
-  - `var_changed`：由 `varstore.changed` 与 `varstore.deleted` 事件驱动，按 `var_owner`/`var_name` 过滤。
+- 触发器（当前）：支持 `interval` / `event` / `var_changed`
+  - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动
+  - `var_changed`：由 `varstore.changed` / `varstore.deleted` 事件驱动
 
 权限
 ----
+
 - 权限节点格式：`协议.action`
 - 第一版最小权限：
-  - `flow.set`：允许写入/更新工作流定义（落盘并生效）
-  - `flow.delete`：允许删除工作流定义（删除时立即中断该 flow 的运行中 run）
-- 当前版本未为 `run/status/list/get` 单独定义额外权限；它们按路由到达的 `executor_node` 执行读取/触发。
+  - `flow.set`
+  - `flow.delete`
+- 当前版本未为 `run/status/list/get` 单独定义额外权限；它们按 `executor_node` 路由到执行者处理。
 
 HeaderTcp 与路由约定
 --------------------
-- SubProto 固定为 `6`（预留给 `flow`）。
-- `TargetID` 仍由核心路由自动转发到目标节点；本协议的“逐级授权”不依赖 `TargetID=0` 等特殊语义。
-- Major 约定（统一框架规则）：
-  - 请求帧（`set/delete/run/status/list/get`）：`MajorCmd`（逐跳可见，需要进入 handler 参与裁决/执行）。
-  - 响应帧（`*_resp`）：`MajorOKResp`（按 `TargetID` 由 Core 快速转发；中间节点不需要进 handler 转发）。
-  - 失败响应仍使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达。
 
-逐级授权模型（统一规则）
-----------------------
-前提：
-- 子节点无条件信任父节点；父节点对子节点有绝对控制权。
-- 因此“父→子”的控制请求属于“向下控制”，可视为天然可控（具体是否免检由各协议定义）。
+- SubProto 固定为 `6`
+- Major 约定：
+  - 请求帧（`set/delete/run/status/list/get`）：`MajorCmd`
+  - 响应帧（`*_resp`）：`MajorOKResp`
+  - 失败响应也使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达
 
-本协议 `flow.set` / `flow.delete` 的逐级授权规则：
-- 请求方将 `flow.set` 或 `flow.delete` 发给任意实现了 `flow` 的节点（称为“执行者/Executor”，它负责落盘与调度状态变更）。
-- 执行者**不直接裁决权限**，而是将请求逐级上送，直到某一级节点能够在其子树内完成裁决并返回结果。
-- 裁决节点（通常为最近公共祖先或其上级）对动作做权限校验：
-  - 校验主体建议为“请求方节点”（`origin_node`）。
-  - `set` 权限名固定为 `flow.set`；`delete` 权限名固定为 `flow.delete`。
-  - 通过：返回对应 `*_resp(code=1)`；拒绝：返回对应 `*_resp(code=403)`。
-- 执行者仅在收到 `code=1` 后才执行落盘变更：
-  - `set`：写入/更新定义并生效。
-  - `delete`：删除定义并立即中断该 flow 的运行中 run。
+逐级授权模型
+------------
 
-> 注：上送转发的具体实现可参考 `varstore` 的 `assist_*` 思路；但 `flow.set` 需要一个明确的最终响应（允许/拒绝），以满足“是否生效”的语义。
+本协议的逐级授权仅适用于 `flow.set` / `flow.delete`：
+
+- 请求方将请求发给任意实现了 `flow` 的节点（称为执行者）
+- 执行者不直接裁决权限，而是逐级上送，直到某一级可以在其子树内完成裁决
+- 裁决节点以 `origin_node` 为权限主体：
+  - `set` 对应 `flow.set`
+  - `delete` 对应 `flow.delete`
+- 执行者仅在收到允许结果后执行本地持久化和调度状态变更
 
 控制帧格式
 ----------
-- 载荷编码：JSON(UTF-8)
-- JSON envelope：`{"action":"...","data":{...}}`
-- 统一字段建议：
-  - `req_id`：UUID 字符串（用于幂等/关联响应）
-  - `origin_node`：最初发起请求的节点 ID（用于权限主体）
-  - `executor_node`：工作流执行者节点 ID（通常为接收方；可用于一致性校验）
-  - `flow_id`：UUID 字符串；必须通过 UUID 格式校验，不能包含路径分隔符或相对路径片段
 
-### action=set（设置/更新工作流，权限：flow.set）
+- 统一 envelope：`{"action":"...","data":{...}}`
+- 统一字段：
+  - `req_id`：请求关联 ID
+  - `origin_node`：最初发起请求的节点 ID
+  - `executor_node`：工作流执行者节点 ID
+  - `flow_id`：UUID 字符串，必须通过 UUID 校验
+
+动作契约
+--------
+
+### action=set
 
 请求 `data`：
+
 - `req_id`：UUID（必填）
 - `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
 - `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
 - `flow_id`：UUID（必填）
 - `name`：string（可选）
 - `trigger`：object（必填）
-  - `type`：`"interval"` | `"event"` | `"var_changed"`
-  - `interval` 触发：
-    - `every_ms`：uint64（必填，>0）
-  - `event` 触发（匹配 TopicBus 发布事件）：
-    - `event_mode`：`publish` | `received` | `any`（可选，默认 `publish`）
-    - `event_name`：string（可选）
-    - `event_topic`：string（可选）
-    - 约束：`event_name` 与 `event_topic` 不能同时为空
-  - `var_changed` 触发（匹配变量变化/删除事件）：
-    - `var_owner`：uint32（可选，0 表示不过滤 owner）
-    - `var_name`：string（可选，空表示不过滤 name）
 - `graph`：object（必填）
-  - `nodes`：array
-  - `edges`：array
 
 响应 `action=set_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/403/404/500` 等失败
+- `code`：`1/400/403/404/500`
 - `msg`：可选错误说明
 - `flow_id`：回显
 
-### action=delete（删除工作流，权限：flow.delete）
+### action=delete
 
 请求 `data`：
+
 - `req_id`：UUID（必填）
-- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
-- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
 - `flow_id`：UUID（必填）
 
-删除语义（第一版）：
-- 删除成功后，执行者必须立即删除对应工作流定义（例如 `./flows/<flow_id>.json`）。
-- 若该 `flow_id` 存在运行中 run，执行者必须立即中断/取消这些 run；不得等待当前节点执行完成。
-- 删除是终态变更；删除后该 `flow_id` 不再参与后续触发与调度，直到再次 `set`。
+删除语义：
+
+- 删除成功后，执行者必须立即删除工作流定义
+- 若该 `flow_id` 存在运行中 run，执行者必须立即中断/取消这些 run
+- 删除后该 `flow_id` 不再参与后续触发和调度，直到再次 `set`
 
 响应 `action=delete_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/403/404/500` 等失败
+- `code`：`1/400/403/404/500`
 - `msg`：可选错误说明
 - `flow_id`：回显
 
-### action=run（手动触发一次运行）
+### action=run
 
 请求 `data`：
+
 - `req_id`：UUID（必填）
-- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
-- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
 - `flow_id`：UUID（必填）
 
 运行语义：
-- `run` 仅触发一次即时执行，不修改工作流定义和触发器。
-- 若 `executor_node` 不在当前节点，则请求按既有路由规则转发到执行者。
-- 若 `flow_id` 不存在，返回 `run_resp(code=404)`。
-- 成功时返回新的 `run_id`，后续可用于 `status` 精确查询。
+
+- `run` 仅触发一次即时执行，不修改定义和触发器
+- 成功时返回新的 `run_id`
 
 响应 `action=run_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/404/500` 等失败
+- `code`：`1/400/404/500`
 - `msg`：可选错误说明
 - `flow_id`：回显
 - `run_id`：成功时必填
 
-### action=status（查询运行状态）
+### action=status
 
 请求 `data`：
+
 - `req_id`：UUID（必填）
-- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
-- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
 - `flow_id`：UUID（必填）
 - `run_id`：UUID（可选）
 
 状态语义：
-- 若提供 `run_id`，查询该次运行。
-- 若未提供 `run_id`，查询该 `flow_id` 在执行者上的最近一次运行。
-- 若找不到对应运行，返回 `status_resp(code=404)`。
+
+- 若提供 `run_id`，查询该次运行摘要
+- 若未提供 `run_id`，查询该 `flow_id` 的最近一次运行
+- `status` 返回摘要，不默认包含完整节点结果
 
 响应 `action=status_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/404/500` 等失败
+- `code`：`1/400/404/500`
 - `msg`：可选错误说明；若运行被取消，可携带取消原因
 - `executor_node`：实际执行者节点 ID
-- `flow_id`：回显
+- `flow_id`：命中的工作流 ID
 - `run_id`：命中的运行 ID
 - `status`：`queued` | `running` | `succeeded` | `failed` | `cancelled`
-- `nodes`：array（每个 DAG 节点的状态）
+- `nodes`：array
   - `id`：节点 ID
-  - `status`：`succeeded` | `failed`
-  - `code`：节点执行结果码；例如 `1/404/408/500`
-  - `msg`：可选节点错误说明
+  - `status`：节点状态摘要
+  - `code`：节点执行结果码
+  - `msg`：可选错误说明
 
-### action=list（列出工作流摘要）
+### action=list
 
 请求 `data`：
-- `req_id`：UUID（必填）
-- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
-- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
 
-列表语义：
-- 返回执行者当前已知的工作流摘要集合。
-- 摘要仅包含定义概览和最近一次运行信息，不返回完整 DAG。
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
 
 响应 `action=list_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/500` 等失败
+- `code`：`1/400/500`
 - `msg`：可选错误说明
 - `executor_node`：实际执行者节点 ID
 - `flows`：array
-  - `flow_id`：工作流 ID
-  - `name`：工作流名称（可选）
-  - `every_ms`：仅 interval 触发器时有值；否则为 `0` 或省略
-  - `last_run_id`：最近一次运行 ID（可选）
-  - `last_status`：最近一次运行状态（可选）
+  - `flow_id`
+  - `name`
+  - `every_ms`
+  - `last_run_id`
+  - `last_status`
 
-### action=get（读取工作流定义）
+### action=get
 
 请求 `data`：
+
 - `req_id`：UUID（必填）
-- `origin_node`：uint32（可选；默认取 `hdr.SourceID`）
-- `executor_node`：uint32（可选；默认取“接收此请求的节点 ID”）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
 - `flow_id`：UUID（必填）
 
-读取语义：
-- 返回执行者当前生效的工作流定义。
-- 若 `flow_id` 不存在，返回 `get_resp(code=404)`。
-
 响应 `action=get_resp`，`data`：
+
 - `req_id`：回显
-- `code`：`1` 成功；`400/404/500` 等失败
+- `code`：`1/400/404/500`
 - `msg`：可选错误说明
 - `executor_node`：实际执行者节点 ID
 - `flow_id`：回显
@@ -212,57 +207,217 @@ HeaderTcp 与路由约定
 - `trigger`：触发器定义
 - `graph`：完整 DAG 定义
 
-#### DAG 结构
+触发器定义
+----------
 
-`graph.nodes[]`（每个 DAG 节点）：
+`trigger`：
+
+- `type`：`interval` | `event` | `var_changed`
+- `interval`
+  - `every_ms`：uint64，必填，`>0`
+- `event`
+  - `event_mode`：`publish` | `received` | `any`
+  - `event_name`：string（可选）
+  - `event_topic`：string（可选）
+  - 约束：`event_name` 与 `event_topic` 不能同时为空
+- `var_changed`
+  - `var_owner`：uint32（可选，`0` 表示不过滤 owner）
+  - `var_name`：string（可选，空表示不过滤 name）
+
+图与节点模型
+------------
+
+`graph.nodes[]`：
+
 - `id`：string（必填，图内唯一）
 - `kind`：string（必填）
-  - 新写入契约固定为 `"call"`
-- `allow_fail`：bool（可选，默认 false）
-  - false：不可接受失败（失败/超时/重试耗尽 => 立即终止整个 flow）
-  - true：可接受失败（记录失败并继续）
-- `retry`：int（可选，默认 1；表示失败后最多额外重试次数）
-- `timeout_ms`：int（可选，默认 3000）
+  - 新写入契约：`"call"` | `"compose"`
+- `allow_fail`：bool（可选，默认 `false`）
+- `retry`：int（可选，默认 `1`）
+- `timeout_ms`：int（可选，默认 `3000`）
 - `spec`：object（必填）
-  - `method`：string（必填，形如 `namespace::method`）
-  - `args`：object（可选）
-  - `target`：uint32（可选）
-    - `0` / 省略 / 本节点 ID：视为本地调用
-    - 其他节点 ID：通过 `exec.call` 发起远程调用
-
-历史兼容说明：
-- 运行期仍兼容历史存量 `kind=local` / `kind=exec` 数据，用于解释旧的落盘 flow。
-- 新的 `set` 请求不得继续提交 `local/exec`；若提交，应返回 `400`。
 
 `graph.edges[]`：
-- `from`：string（必填，节点 id）
-- `to`：string（必填，节点 id）
 
-执行语义（第一版）：
-- 对 `graph` 做拓扑排序；按顺序逐个执行 `nodes`。
-- 每个节点执行采用 `timeout_ms` 控制单次尝试；失败时按 `retry` 进行重试。
-- `kind=call` 的调用分发：
-  - `target` 为空、`0` 或等于本节点：先查本地方法，再查通用 capability registry
-  - `target` 为其他节点：由 `flow` 发起 `exec.call`，再由 `exec` 负责路由与权限裁决
-- 失败处理：
-  - `allow_fail=false`：立刻结束，flow=failed
-  - `allow_fail=true`：记录节点失败，继续执行后续节点
+- `from`：string（必填）
+- `to`：string（必填）
 
-持久化与目录
+写入契约与兼容边界：
+
+- 新的 `set` 请求不得再写入 `local` / `exec`
+- 运行期仍允许解释历史存量 `local` / `exec` 数据，以便旧落盘 flow 继续运行
+
+数据流执行模型
+--------------
+
+单次 run 在执行期维护一个内部 `RunContext`，至少包含：
+
+- `flow_id`
+- `run_id`
+- `executor_node`
+- `trigger`
+- `nodes.<node_id>`
+  - `status`
+  - `code`
+  - `msg`
+  - `result`
+
+`RunContext` 仅在运行时和调试链路中使用，不默认通过 `status_resp` 全量返回。
+
+触发上下文规范化
+----------------
+
+执行器应在 run 开始时把触发源统一映射为可引用的 trigger 上下文：
+
+- `interval`
+  - 至少包含触发时间
+- `event`
+  - 至少包含 `mode`、`topic`、`name`、`payload`
+- `var_changed`
+  - 至少包含 `owner`、`name`、`op`
+
+节点可以通过输入绑定显式消费这些 trigger 字段。
+
+输入绑定模型
 ------------
-- 默认目录：运行目录下 `./flows`
+
+输入绑定采用结构化对象，而不是自由模板字符串。
+
+`InputBinding`：
+
+- `to`：JSON Pointer，表示写入目标
+- `source`：object，表示读取来源
+- `required`：bool（可选，默认 `false`）
+
+`source.kind` 首批支持：
+
+- `node_result`
+  - `node_id`：被引用节点 ID
+  - `path`：可选 JSON Pointer，默认根结果
+- `trigger`
+  - `path`：可选 JSON Pointer，默认根 trigger 上下文
+- `flow_meta`
+  - `field`：当前仅允许 `flow_id`
+- `run_meta`
+  - `field`：当前仅允许 `run_id`
+
+引用规则：
+
+- 只允许引用祖先节点
+- 不允许引用当前节点或未来节点
+- `to` 必须是合法 JSON Pointer
+- `required=true` 且来源不存在时，当前节点必须失败
+
+节点类型：call
+--------------
+
+`kind=call` 的正式写入 spec：
+
+- `method`：string（必填，形如 `namespace::method`）
+- `target`：uint32（可选）
+  - `0` / 省略 / 本节点 ID：本地调用
+  - 其他节点 ID：通过 `exec.call` 发起远程调用
+- `args_template`：object（可选，默认 `{}`）
+- `inputs`：`InputBinding[]`（可选）
+- `_ui`：编辑器布局元数据（可选，不参与执行语义）
+
+执行语义：
+
+1. 以 `args_template` 为基础物化输入 JSON
+2. 按声明顺序应用 `inputs`
+3. 得到最终调用参数
+4. `target` 为空、`0` 或等于本节点时：
+   - 先查本地方法
+   - 再查 capability registry
+5. `target` 为其他节点时：
+   - 由 `flow` 发起 `exec.call`
+   - `exec` 负责路由与权限裁决
+6. 成功时，将 `exec.call_resp.result` 或本地方法返回值写入 `RunContext.nodes[<id>].result`
+
+兼容说明：
+
+- 历史存量 `call` 节点若仍使用 `args` 直写且未声明 `inputs`，运行期可继续解释
+- 新写入契约应使用 `args_template + inputs`
+
+节点类型：compose
+-----------------
+
+`kind=compose` 的正式写入 spec：
+
+- `template`：object（必填）
+- `inputs`：`InputBinding[]`（可选）
+- `_ui`：编辑器布局元数据（可选）
+
+执行语义：
+
+1. 以 `template` 为基础物化结果 JSON
+2. 按声明顺序应用 `inputs`
+3. 得到最终结果并写入 `RunContext.nodes[<id>].result`
+4. `compose` 节点不发起远程调用，也不依赖 `exec.call`
+
+执行语义
+--------
+
+- 对 `graph` 做拓扑排序；按顺序逐个执行 `nodes`
+- 每个节点执行前，先完成输入物化
+- 每个节点执行后，把状态和结果写入 `RunContext`
+- `allow_fail=false`
+  - 当前节点失败后立即结束整个 run
+- `allow_fail=true`
+  - 记录当前节点失败并继续后续节点
+
+失败类型建议：
+
+- 绑定配置非法：`400`
+- 绑定运行期缺失必填值：`400`
+- 目标方法不存在：`404`
+- 调用超时：`408`
+- 执行内部错误：`500`
+
+图校验要求
+----------
+
+`set` 阶段至少校验：
+
+- 图非空
+- 节点 ID 唯一
+- 边引用的节点存在
+- 图无环
+- `call` / `compose` 的 spec 字段完整
+- `inputs` 中引用的 `node_id` 存在
+- `inputs` 中引用的 `node_id` 是当前节点祖先
+- `to` / `source.path` 是合法 JSON Pointer
+
+持久化与配置
+------------
+
+- 默认目录：`./flows`
   - 工作流定义：`./flows/<flow_id>.json`
-  - （可选）运行记录：`./flows/runs/<run_id>.json`
 - 建议配置项：
-  - `flow.base_dir`：默认 `./flows`
-  - `flow.max_flows` / `flow.max_concurrent_runs`：可选
+  - `flow.base_dir`
+  - `flow.max_retained_runs`
+
+结果保留策略：
+
+- 运行时可在内存中保留有限数量的历史 run 摘要
+- 完整节点结果不承诺长期持久化，除非后续新增专门的 run detail / archive 能力
 
 错误码建议
 ----------
+
 - `1`：ok
-- `400`：invalid request / invalid graph / invalid flow_id / unsupported legacy write kind
-- `403`：permission denied（`flow.set` / `flow.delete`）
-- `404`：not found（例如无法找到可裁决节点/无父节点/删除目标 flow 不存在、run/status/get 查询目标不存在）
-- `409`：conflict（可选，例如已有运行中的同名 flow 不允许覆盖）
+- `400`：invalid request / invalid graph / invalid flow_id / invalid binding
+- `403`：permission denied
+- `404`：not found
+- `408`：timeout
 - `500`：internal error
 
+Related Requirements
+--------------------
+
+- [../requirements/flow_data_dag.md](../requirements/flow_data_dag.md)
+
+Related Changes
+---------------
+
+- 待本次 workflow 完成后补充。
