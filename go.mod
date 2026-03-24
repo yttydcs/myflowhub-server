@@ -3,9 +3,9 @@ module github.com/yttydcs/myflowhub-server
 go 1.25.0
 
 require (
-	github.com/yttydcs/myflowhub-core v0.4.7
-	github.com/yttydcs/myflowhub-proto v0.1.1
-	github.com/yttydcs/myflowhub-subproto/auth v0.1.2
+	github.com/yttydcs/myflowhub-core v0.4.8
+	github.com/yttydcs/myflowhub-proto v0.1.2
+	github.com/yttydcs/myflowhub-subproto/auth v0.1.4
 	github.com/yttydcs/myflowhub-subproto/exec v0.1.0
 	github.com/yttydcs/myflowhub-subproto/file v0.1.2
 	github.com/yttydcs/myflowhub-subproto/flow v0.1.0
