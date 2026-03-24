@@ -146,7 +146,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 			r.storeErr(err)
 			return err
 		}
-		nodeID, err := selfRegisterNodeID(ctx, parentTCPAddr, opts.SelfID, log)
+		nodeID, err := selfRegisterNodeID(ctx, parentTCPAddr, opts.SelfID, opts.ParentJoinPermit, log)
 		if err != nil {
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
@@ -424,7 +424,7 @@ func (r *Runtime) startParentBootstrapWatcher(cfg core.IConfig) {
 				continue
 			}
 			displayName := trimmedConfigValue(cfg, "node.display_name")
-			if err := sendRegisterOnConn(watchCtx, conn, opts.SelfID, displayName, &r.msgSeq); err != nil {
+			if err := sendRegisterOnConn(watchCtx, conn, opts.SelfID, displayName, opts.ParentJoinPermit, &r.msgSeq); err != nil {
 				log.Warn("parent bootstrap register failed", "err", err, "conn", conn.ID())
 				r.storeErr(err)
 				continue
@@ -463,13 +463,14 @@ func ensureConnNodeIDNonZero(conn core.IConnection, fallback uint32) (ensured bo
 	return true
 }
 
-func selfRegisterNodeID(ctx context.Context, parentAddr, selfID string, log *slog.Logger) (uint32, error) {
+func selfRegisterNodeID(ctx context.Context, parentAddr, selfID, joinPermit string, log *slog.Logger) (uint32, error) {
 	// Use a short timeout to avoid blocking embedded runtimes on flaky networks.
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	nodeID, _, err := bootstrap.SelfRegister(cctx, bootstrap.SelfRegisterOptions{
 		ParentAddr: parentAddr,
 		SelfID:     selfID,
+		JoinPermit: joinPermit,
 		Timeout:    8 * time.Second,
 		DoLogin:    false,
 		Logger:     log,
@@ -494,7 +495,7 @@ func trimmedConfigValue(cfg core.IConfig, key string) string {
 	return strings.TrimSpace(val)
 }
 
-func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, displayName string, seq *atomic.Uint32) error {
+func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, displayName, joinPermit string, seq *atomic.Uint32) error {
 	if ctx == nil {
 		return errors.New("ctx nil")
 	}
@@ -509,6 +510,9 @@ func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, disp
 	}
 	if trimmedDisplayName := strings.TrimSpace(displayName); trimmedDisplayName != "" {
 		data["display_name"] = trimmedDisplayName
+	}
+	if trimmedPermit := strings.TrimSpace(joinPermit); trimmedPermit != "" {
+		data["join_permit"] = trimmedPermit
 	}
 	payload, _ := json.Marshal(map[string]any{
 		"action": "register",
