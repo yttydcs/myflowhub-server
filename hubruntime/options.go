@@ -54,6 +54,7 @@ type Options struct {
 	ParentEndpoint     string
 	ParentAddr         string
 	ParentEnable       bool
+	ParentJoinPermit   string
 	ParentReconnectSec int
 
 	// Dispatcher/worker settings
@@ -104,6 +105,7 @@ func DefaultOptions() Options {
 		ParentEndpoint:        "",
 		ParentAddr:            "",
 		ParentEnable:          false,
+		ParentJoinPermit:      "",
 		ParentReconnectSec:    3,
 
 		RFCOMMEnable:   false,
@@ -181,6 +183,10 @@ func DefaultOptionsFromEnv() Options {
 	if v, ok := lookupEnvBool("HUB_PARENT_ENABLE"); ok {
 		opts.ParentEnable = v
 		opts.AddConfigOverrideKeys(coreconfig.KeyParentEnable)
+	}
+	if v, ok := lookupEnvString("HUB_PARENT_JOIN_PERMIT"); ok {
+		opts.ParentJoinPermit = v
+		opts.AddConfigOverrideKeys(coreconfig.KeyParentJoinPermit)
 	}
 	if v, ok := lookupEnvInt("HUB_PARENT_RECONNECT"); ok {
 		opts.ParentReconnectSec = int(v)
@@ -277,6 +283,7 @@ func (o *Options) Normalize() {
 	o.QUICClientCAFile = strings.TrimSpace(o.QUICClientCAFile)
 	o.ParentEndpoint = strings.TrimSpace(o.ParentEndpoint)
 	o.ParentAddr = strings.TrimSpace(o.ParentAddr)
+	o.ParentJoinPermit = strings.TrimSpace(o.ParentJoinPermit)
 	if o.TCPEnable && o.Addr == "" {
 		if _, ok := overrideKeys["addr"]; !ok {
 			o.Addr = defaults.Addr

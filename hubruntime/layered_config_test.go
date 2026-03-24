@@ -73,6 +73,7 @@ func TestApplyConfigToOptions(t *testing.T) {
 		"addr":                           "127.0.0.1:9001",
 		coreconfig.KeyParentAddr:         "tcp://127.0.0.1:9100",
 		coreconfig.KeyParentEnable:       "true",
+		coreconfig.KeyParentJoinPermit:   "permit-parent-1",
 		coreconfig.KeyParentReconnectSec: "0",
 	})
 
@@ -88,6 +89,9 @@ func TestApplyConfigToOptions(t *testing.T) {
 	}
 	if !applied.ParentEnable {
 		t.Fatalf("parent enable not applied")
+	}
+	if applied.ParentJoinPermit != "permit-parent-1" {
+		t.Fatalf("parent join permit not applied: got %q", applied.ParentJoinPermit)
 	}
 	if applied.ParentReconnectSec != 0 {
 		t.Fatalf("parent reconnect not applied: got %d", applied.ParentReconnectSec)

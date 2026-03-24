@@ -155,6 +155,7 @@ func configDataFromOptions(opts Options) map[string]string {
 		"addr":                           strings.TrimSpace(opts.Addr),
 		coreconfig.KeyParentAddr:         effectiveParentTarget(opts),
 		coreconfig.KeyParentEnable:       boolString(opts.ParentEnable),
+		coreconfig.KeyParentJoinPermit:   strings.TrimSpace(opts.ParentJoinPermit),
 		coreconfig.KeyParentReconnectSec: strconv.Itoa(opts.ParentReconnectSec),
 
 		coreconfig.KeyProcChannelCount:   strconv.Itoa(opts.ProcChannels),
@@ -207,6 +208,9 @@ func applyConfigToOptions(opts Options, cfg core.IConfig) Options {
 	}
 	if val, ok := cfg.Get(coreconfig.KeyParentEnable); ok {
 		opts.ParentEnable = parseBoolValue(val, opts.ParentEnable)
+	}
+	if val, ok := cfg.Get(coreconfig.KeyParentJoinPermit); ok {
+		opts.ParentJoinPermit = strings.TrimSpace(val)
 	}
 	if val, ok := cfg.Get(coreconfig.KeyParentReconnectSec); ok {
 		opts.ParentReconnectSec = parseIntValue(val, opts.ParentReconnectSec)

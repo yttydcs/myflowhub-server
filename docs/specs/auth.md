@@ -12,24 +12,35 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 --------------
 - TargetID=0 仅表示“向子节点广播，不回父”，**不**表示上送；上送父/权威需写明 NodeID。
 - Major：命令/状态类用 `MajorCmd`；响应可用 `MajorOKResp`。
-- 权威选择：优先配置 `authority.node_id`，否则父链接；无父则本地即权威。
+- 权威选择：
+  - 若显式配置 `authority.node_id`，则该 `node_id` 是唯一 authority；只有当前连接表里存在该节点连接时才可上送，**不得**回退为父节点或本地 authority。
+  - 若未配置 `authority.node_id` 且已配置父链，则直接父节点是唯一 authority；父链不可达时，**不得**回退为本地 authority。
+  - 仅在既未配置 `authority.node_id` 也未配置父链时，本地才是 authority。
 
 密钥与持久化
 ------------
-- 节点密钥：启动时从 `config/node_keys.json` 读取/生成（字段 `privkey`、`pubkey`，base64 DER），并写入配置键 `auth.node_priv_key`、`auth.node_pub_key`。
+- 节点密钥：启动时从 `config/node_keys.json` 读取/生成（字段 `privkey`、`pubkey`，base64 DER），并写入配置键 `auth.node_privkey`、`auth.node_pubkey`。
 - 信任/白名单：`config/trusted_nodes.json`
   - `bindings`: device_id -> `{node_id,pubkey,role,perms}`，注入 whitelist。
-  - `meta`: 预留。
- 读取时注入 whitelist 与 trusted 节点公钥；持久化时同步写回缺失的 trusted 公钥（`auth.disable_persist=true` 时不读写该文件）。
+  - `meta.pending_registers`: 待审批注册请求列表。
+  - `meta.approved_registers`: 已批准但尚未完成最终 register 的预留身份。
+  - `meta.register_permits`: 一次性角色 permit 列表。
+- `auth.disable_persist=true` 时，不读写 `trusted_nodes.json`，因此 pending / approved / permit 也不会落盘。
 
 动作与数据字段
 -------------
 - register / assist_register  
-  - req: `{"device_id","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","ts,omitempty","nonce,omitempty"}`（pubkey 可选；缺省不会自动填充，也不会写入 trusted/binding 公钥；`display_name` 为可选提示字段）。  
-  - resp: `{"code","msg,omitempty","device_id","node_id","hub_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","ts,omitempty","nonce,omitempty"}`
+  - req: `{"device_id","requested_role,omitempty","join_permit,omitempty","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","ts,omitempty","nonce,omitempty"}`。  
+  - `requested_role` 仅作为“申请的目标角色”提示；是否生效取决于 approve / permit。  
+  - `join_permit` 是 authority 保存的一次性 opaque token，绑定 `device_id + role + expiry`。  
+  - resp: `{"code","msg,omitempty","device_id","node_id,omitempty","hub_id,omitempty","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty","display_name,omitempty","status,omitempty","request_id,omitempty","reason,omitempty","ts,omitempty","nonce,omitempty"}`  
+  - `status` 语义：
+    - `approved`: 注册已完成（`code=1`，必须带 `node_id`）
+    - `pending`: 已进入待审批（`code=202`，不带正式 `node_id`）
+    - `rejected`: 被拒绝或 permit 无效（常见 `code=4001`）
 - login / assist_login  
   - req: `{"device_id","node_id,omitempty","display_name,omitempty","ts","nonce","sig","alg"}`，需 ES256 签名；`display_name` 为可选提示字段，不进入签名摘要。  
-  - resp: 同 register_resp，失败 code=4001。
+  - resp: 同 register_resp，失败常见 `code=4001`；authority 不可达时为 `code=4500`。
 - assist_query_credential / _resp  
   - req: `{"device_id","node_id,omitempty"}`  
   - resp: `{"code","msg,omitempty","device_id","node_id","role,omitempty","perms,omitempty","pubkey,omitempty","node_pub,omitempty"}`
@@ -52,10 +63,42 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - list_roles / _resp: `{"offset,omitempty","limit,omitempty","role,omitempty","node_ids,omitempty"}` → `{"code","msg,omitempty","total","roles":[{node_id,role,perms}]}`。  
   - perms_invalidate: `{"node_ids,omitempty","reason,omitempty","refresh,omitempty"}`；清缓存，可选触发上行刷新；向子节点广播（target=0）。  
   - perms_snapshot: 下发/广播权限快照（结构见 core/permission.Snapshot）。
+- 受控准入动作（都要求调用方已登录并显式命中 `auth.*` 权限）  
+  - list_pending_registers / _resp  
+    - req: `{"offset,omitempty","limit,omitempty","device_id,omitempty"}`  
+    - resp: `{"code","msg,omitempty","total","items":[{"request_id","device_id","requested_role,omitempty","display_name,omitempty","created_at","expires_at"}]}`  
+    - 权限：`auth.pending.list`
+  - approve_register / _resp  
+    - req: `{"request_id","role,omitempty"}`  
+    - resp: `{"code","msg,omitempty","request_id","device_id","node_id","role,omitempty","status":"approved"}`  
+    - 语义：分配并预留 `node_id`，但**不会**立即创建 whitelist/binding；申请方必须重试 `register` 才完成最终入网。  
+    - 权限：`auth.register.approve`
+  - reject_register / _resp  
+    - req: `{"request_id","reason,omitempty"}`  
+    - resp: `{"code","msg,omitempty","request_id","device_id","status":"rejected","reason,omitempty"}`  
+    - 权限：`auth.register.reject`
+  - issue_register_permit / _resp  
+    - req: `{"device_id","role","expires_at,omitempty"}`  
+    - resp: `{"code","msg,omitempty","permit","device_id","role","expires_at"}`  
+    - 权限：`auth.permit.issue`
+  - revoke_register_permit / _resp  
+    - req: `{"permit"}`  
+    - resp: `{"code","msg,omitempty","permit","device_id,omitempty","role,omitempty"}`  
+    - 权限：`auth.permit.revoke`
 
 核心流程
 --------
-- 注册：本地权威或 assist_register 上送权威分配 node_id；保存 whitelist/路由；仅当请求携带 pubkey 时才写入 trusted/binding 公钥，返回 register_resp/assist_register_resp。
+- register（统一入口）：
+  1. 若 `device_id` 已存在 whitelist，则视为幂等 rebind：直接返回 `status=approved`，并把当前连接重新绑定到已有 `node_id`。  
+  2. 否则若 `join_permit` 存在，则按 permit 路径校验并消费：成功后立即入网为 permit 指定角色。  
+  3. 否则若存在 `approved_registers[device_id]`，说明该申请已被 approve：这次 retry register 会消费该预留记录并真正创建 whitelist/binding。  
+  4. 否则若 `auth.register.require_approval=true`，创建/刷新 pending 记录并返回 `status=pending`；这一阶段**不创建** whitelist、trusted、route index。  
+  5. 否则走兼容的开放注册路径，立即分配 `node_id` 并创建 binding。  
+- authority 不可达：
+  - 当显式 authority 或已配置父链不可达时，普通 `register` 返回 `code=4500,msg="authority unavailable"`，不会回退为本地 authority。
+  - `login` 中依赖上游 authority 的路径（例如本地缺 credential / 本地未命中需 assist）同样返回 `code=4500,msg="authority unavailable"`。
+- approve 流程：`approve_register` 只完成“批准并预留身份”，不会直接把申请方接入网络；申请方必须再次发起 `register`。
+- permit 流程：permit 一次性、绑定 `device_id`，成功消费后立即失效；`device_id` 不匹配不会消费 permit。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
 - 直连名称缓存：当 direct child 在 register/login 或对应 assist 回包中携带 `display_name` 时，直接父节点可以把该值缓存到连接 metadata，供 management `list_nodes` 低成本返回；缺失时保持回退 `node_id`。
 - 权限：角色/权限来自配置与白名单；perms_invalidate 清缓存并可刷新；perms_snapshot 应用后广播下行。
@@ -65,20 +108,29 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 错误码（data.code）
 -------------------
 - 1：成功
+- 202：register 已进入 `pending`
 - 400：参数非法
-- 4001：未找到 / 签名不匹配 / 未注册
-- 4403：权限不足（revoke 等）
-- 4500：内部错误（预留）
+- 4001：未找到 / 签名不匹配 / 未注册 / permit 无效
+- 4403：权限不足（revoke、approve、issue permit 等）
+- 4500：内部错误 / authority unavailable
 
 配置键
 ------
-- 权威/持久化：`authority.node_id`，`auth.disable_persist`（true 不读写 trusted_nodes），`auth.node_priv_key`，`auth.node_pub_key`，`auth.trusted_nodes`（JSON map，由文件填充）。
+- 权威/持久化：`authority.node_id`，`auth.disable_persist`（true 不读写 trusted_nodes），`auth.node_privkey`，`auth.node_pubkey`，`auth.trusted_nodes`（JSON map，由文件填充）。
 - 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:admin;2:node`），`auth.role_perms`（例 `admin:p1,p2;node:p3`）。
+- 受控准入：  
+  - `auth.register.require_approval`：`true` 时普通 register 先进入 pending  
+  - `auth.register.pending_ttl_sec`：pending 与 approved 预留记录 TTL  
+  - `auth.register.permit_ttl_sec`：permit 默认 TTL  
+- hubruntime / 父链：  
+  - `parent.join_permit`：parent bootstrap 用的一次性 permit；会透传到 pre-start `SelfRegister` 和持久 parent 连接上的 register rebind。
 
 示例
 ----
-- 注册请求：`{"action":"register","data":{"device_id":"mac-001122334455","pubkey":"<base64 DER EC 公钥>"}}`
-- 注册响应：`{"action":"register_resp","data":{"code":1,"msg":"ok","device_id":"mac-001122334455","node_id":5,"hub_id":2,"pubkey":"<...>","node_pub":"<...>"}}`
+- 开放/已批准后的注册请求：`{"action":"register","data":{"device_id":"mac-001122334455","pubkey":"<base64 DER EC 公钥>"}}`
+- 待审批响应：`{"action":"register_resp","data":{"code":202,"msg":"pending approval","device_id":"mac-001122334455","status":"pending","request_id":"req_xxx","reason":"approval required"}}`
+- permit 注册请求：`{"action":"register","data":{"device_id":"mac-001122334455","join_permit":"permit_xxx"}}`
+- permit/批准后注册成功响应：`{"action":"register_resp","data":{"code":1,"msg":"ok","device_id":"mac-001122334455","node_id":5,"hub_id":2,"role":"admin","status":"approved"}}`
 - 登录请求：`{"action":"login","data":{"device_id":"mac-001122334455","ts":1700000000,"nonce":"n1","sig":"<ES256>","alg":"ES256"}}`
 - 撤销请求：`{"action":"revoke","data":{"device_id":"mac-001122334455","node_id":5}}`
 - 权限失效广播：`{"action":"perms_invalidate","data":{"node_ids":[5,6],"refresh":true}}`
@@ -88,3 +140,6 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - Target=0 只向子节点广播，不会上送父；上送权威必须写明目标 NodeID。
 - 登录/注册均需 P256 DER 公钥 + ES256 签名；缺公钥先用 assist_query_credential 获取。
 - 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。
+- parent hub 在受控准入网络中应配置 `parent.join_permit`；否则 pre-start bootstrap 会收到 `status=pending/rejected` 并显式启动失败。
+- 初次 permit / approve 成功后的 parent bootstrap，后续在持久 parent 连接上的 register 属于“已有身份的幂等 rebind”，不再要求新的 permit。
+- 若配置了 `authority.node_id` 或 `parent.addr`，但对应 authority / 父链连接不可达，auth 不会再回退为本地 authority；部署侧应接受显式失败语义。

@@ -12,11 +12,11 @@ import (
 	"github.com/yttydcs/myflowhub-core/header"
 )
 
-func TestSendRegisterOnConnIncludesDisplayName(t *testing.T) {
+func TestSendRegisterOnConnIncludesDisplayNameAndJoinPermit(t *testing.T) {
 	conn := &registerTestConn{id: "parent"}
 	var seq atomic.Uint32
 
-	if err := sendRegisterOnConn(context.Background(), conn, "device-1", "  Runtime Hub  ", &seq); err != nil {
+	if err := sendRegisterOnConn(context.Background(), conn, "device-1", "  Runtime Hub  ", "  permit-1  ", &seq); err != nil {
 		t.Fatalf("sendRegisterOnConn: %v", err)
 	}
 	if len(conn.sent) != 1 {
@@ -43,13 +43,16 @@ func TestSendRegisterOnConnIncludesDisplayName(t *testing.T) {
 	if got := msg.Data["display_name"]; got != "Runtime Hub" {
 		t.Fatalf("unexpected display_name: got %v want %q", got, "Runtime Hub")
 	}
+	if got := msg.Data["join_permit"]; got != "permit-1" {
+		t.Fatalf("unexpected join_permit: got %v want %q", got, "permit-1")
+	}
 }
 
 func TestSendRegisterOnConnOmitsBlankDisplayName(t *testing.T) {
 	conn := &registerTestConn{id: "parent"}
 	var seq atomic.Uint32
 
-	if err := sendRegisterOnConn(context.Background(), conn, "device-2", " \t ", &seq); err != nil {
+	if err := sendRegisterOnConn(context.Background(), conn, "device-2", " \t ", " \t ", &seq); err != nil {
 		t.Fatalf("sendRegisterOnConn: %v", err)
 	}
 	if len(conn.sent) != 1 {
@@ -62,6 +65,9 @@ func TestSendRegisterOnConnOmitsBlankDisplayName(t *testing.T) {
 	}
 	if _, ok := msg.Data["display_name"]; ok {
 		t.Fatalf("display_name should be omitted for blank input")
+	}
+	if _, ok := msg.Data["join_permit"]; ok {
+		t.Fatalf("join_permit should be omitted for blank input")
 	}
 }
 
