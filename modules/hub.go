@@ -24,7 +24,10 @@ type Set struct {
 
 // DefaultHub 返回 hub_server 的默认启用模块集合。
 func DefaultHub(cfg core.IConfig, log *slog.Logger) (Set, error) {
-	handlers, def := defaultset.DefaultHub(cfg, log)
+	handlers, def, err := defaultset.DefaultHub(cfg, log)
+	if err != nil {
+		return Set{}, err
+	}
 	set := Set{
 		Handlers: handlers,
 		Default:  def,

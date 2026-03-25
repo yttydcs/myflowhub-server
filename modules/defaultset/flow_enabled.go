@@ -7,9 +7,17 @@ import (
 	"log/slog"
 
 	core "github.com/yttydcs/myflowhub-core"
+	"github.com/yttydcs/myflowhub-subproto/exec/runtimedeps"
 	flowhandler "github.com/yttydcs/myflowhub-subproto/flow"
 )
 
-func newFlowHandler(cfg core.IConfig, log *slog.Logger) core.ISubProcess {
-	return flowhandler.NewHandlerWithConfig(cfg, log)
+func newFlowHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (core.ISubProcess, error) {
+	store, err := newFlowPersistence(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return flowhandler.NewHandlerWithOptions(cfg, flowhandler.HandlerOptions{
+		RuntimeDeps: deps,
+		Persistence: store,
+	}, log), nil
 }

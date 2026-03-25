@@ -68,6 +68,33 @@ VarStore 协议（SubProto=3）新规范
   - `revoke_resp` 成功：沿回程链路删除缓存；
   - `notify_set/notify_revoke`：下行链路要求“转发 + 本地处理（缓存/订阅推送）”。
 
+持久化与缓存
+------------
+- `varstore` 的业务记录持久化是可插拔的，handler 只依赖 `LoadAll/Save/Delete` 接口。
+- 默认 backend：`memory`
+  - `varstore.backend` 未配置或为空时，业务记录仅存在内存。
+  - 默认 memory backend 与运行期 `records` cache 语义保持一致。
+- `pg` backend：
+  - `varstore.backend=pg` 时，由 `Server` 注入 PG persistence。
+  - PG 仅持久化业务记录：`(owner, name, value, type, visibility)`。
+  - 启动时通过 persistence `LoadAll()` 预热 owner 侧已持久化记录到内存 cache。
+- owner 写序约束：
+  - 非 owner 节点收到 `set/revoke` 只负责路由，不写持久层。
+  - owner 节点必须先持久化成功，再更新本地 cache、再发事件/notify/up_*、最后回成功响应。
+  - owner 持久化失败时，不得发送成功事件、成功 notify、`up_set/up_revoke` 或成功响应。
+- 非持久化范围：
+  - `pending`
+  - `writing`
+  - `subscriptions`
+  - `pendingSubs`
+  - 逐跳路由缓存与远端缓存预热数据
+- 建议配置项：
+  - `varstore.backend`
+  - `state.pg.dsn`
+  - `state.pg.varstore_table`
+- backend 已显式配置但不可用时，不静默降级到其他 backend。
+- backend 切换时不自动迁移已有 memory / PG 数据。
+
 订阅/变更推送
 --------------
 - 订阅载荷：`{"name":"...","owner":N,"subscriber":0|SourceID}`，owner 必填；subscriber 只能为空（0）或等于请求帧 SourceID。
@@ -100,5 +127,4 @@ VarStore 协议（SubProto=3）新规范
 
 后续演进
 --------
-- 若需持久化，可在 `assist_set` 命中节点挂接存储。
 - 若需多活 owner/分区路由，可扩展 owner->Hub 映射，在预路由阶段直接路由到 owner 所在 Hub。***

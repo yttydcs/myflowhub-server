@@ -391,11 +391,27 @@ HeaderTcp 与路由约定
 持久化与配置
 ------------
 
-- 默认目录：`./flows`
-  - 工作流定义：`./flows/<flow_id>.json`
+- 工作流定义持久化是可插拔的，运行期 `flow` handler 只依赖 `LoadAll/Save/Delete` 接口。
+- 默认 backend：`json`
+  - `flow.backend` 未配置或为空时，仍使用本地 JSON 文件。
+  - 默认目录：`./flows`
+  - 文件命名：`./flows/<flow_id>.json`
+- `pg` backend：
+  - `flow.backend=pg` 时，由 `Server` 注入 PG persistence。
+  - PG 中直接存储完整 flow 定义本体，而不是本地 JSON 路径引用。
+  - 启动时通过 persistence `LoadAll()` 预热到内存 `flows map`。
 - 建议配置项：
+  - `flow.backend`
   - `flow.base_dir`
   - `flow.max_retained_runs`
+  - `state.pg.dsn`
+  - `state.pg.flow_table`
+- 不在本轮持久化范围：
+  - run 状态
+  - scheduler
+  - runtime context
+- backend 已显式配置但不可用时，不静默降级到其他 backend。
+- backend 切换时不自动迁移已有 JSON / PG 数据。
 
 结果保留策略：
 
