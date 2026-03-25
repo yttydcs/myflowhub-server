@@ -25,6 +25,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - `meta.pending_registers`: 待审批注册请求列表。
   - `meta.approved_registers`: 已批准但尚未完成最终 register 的预留身份。
   - `meta.register_permits`: 一次性角色 permit 列表。
+  - `meta.first_register_bootstrap`: 首个注册 bootstrap 的消费状态（`consumed_epoch` 等）。
 - `auth.disable_persist=true` 时，不读写 `trusted_nodes.json`，因此 pending / approved / permit 也不会落盘。
 
 动作与数据字段
@@ -92,8 +93,11 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   1. 若 `device_id` 已存在 whitelist，则视为幂等 rebind：直接返回 `status=approved`，并把当前连接重新绑定到已有 `node_id`。  
   2. 否则若 `join_permit` 存在，则按 permit 路径校验并消费：成功后立即入网为 permit 指定角色。  
   3. 否则若存在 `approved_registers[device_id]`，说明该申请已被 approve：这次 retry register 会消费该预留记录并真正创建 whitelist/binding。  
-  4. 否则若 `auth.register.require_approval=true`，创建/刷新 pending 记录并返回 `status=pending`；这一阶段**不创建** whitelist、trusted、route index。  
-  5. 否则走兼容的开放注册路径，立即分配 `node_id` 并创建 binding。  
+  4. 否则若启用了 `auth.bootstrap.first_register.enabled`，且当前是 local authority、`device_id` 命中配置、`epoch` 尚未消费：
+     - 若配置了 `auth.bootstrap.first_register.pubkey`，则请求必须携带且匹配该公钥；不匹配时显式返回 `status=rejected`，**不会**降级到 pending。
+     - 匹配成功后，节点立即以 `auth.bootstrap.first_register.role` 完成首次准入，并把消费状态持久化到 `trusted_nodes.json.meta.first_register_bootstrap`。
+  5. 否则若 `auth.register.require_approval=true`，创建/刷新 pending 记录并返回 `status=pending`；这一阶段**不创建** whitelist、trusted、route index。  
+  6. 否则走兼容的开放注册路径，立即分配 `node_id` 并创建 binding。  
 - authority 不可达：
   - 当显式 authority 或已配置父链不可达时，普通 `register` 返回 `code=4500,msg="authority unavailable"`，不会回退为本地 authority。
   - `login` 中依赖上游 authority 的路径（例如本地缺 credential / 本地未命中需 assist）同样返回 `code=4500,msg="authority unavailable"`。
@@ -122,6 +126,11 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - `auth.register.require_approval`：`true` 时普通 register 先进入 pending  
   - `auth.register.pending_ttl_sec`：pending 与 approved 预留记录 TTL  
   - `auth.register.permit_ttl_sec`：permit 默认 TTL  
+  - `auth.bootstrap.first_register.enabled`：启用首个注册 bootstrap 槽位  
+  - `auth.bootstrap.first_register.role`：bootstrap 命中后授予的角色，默认 `admin`；必须是已定义角色  
+  - `auth.bootstrap.first_register.device_id`：允许走 bootstrap 的唯一设备标识  
+  - `auth.bootstrap.first_register.pubkey`：可选；配置后要求请求公钥必须匹配  
+  - `auth.bootstrap.first_register.epoch`：正整数；同一 epoch 只消费一次，手工提升后才可重新开启  
 - hubruntime / 父链：  
   - `parent.join_permit`：parent bootstrap 用的一次性 permit；会透传到 pre-start `SelfRegister` 和持久 parent 连接上的 register rebind。
 
@@ -140,6 +149,8 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - Target=0 只向子节点广播，不会上送父；上送权威必须写明目标 NodeID。
 - 登录/注册均需 P256 DER 公钥 + ES256 签名；缺公钥先用 assist_query_credential 获取。
 - 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。
+- first-register bootstrap 仅适用于 local authority 冷启动；若配置了 `authority.node_id` 或 `parent.addr`，启用它会被视为非法配置并导致 auth 初始化失败。
+- first-register bootstrap 依赖持久化消费状态；`auth.disable_persist=true` 时不得启用。
 - parent hub 在受控准入网络中应配置 `parent.join_permit`；否则 pre-start bootstrap 会收到 `status=pending/rejected` 并显式启动失败。
 - 初次 permit / approve 成功后的 parent bootstrap，后续在持久 parent 连接上的 register 属于“已有身份的幂等 rebind”，不再要求新的 permit。
 - 若配置了 `authority.node_id` 或 `parent.addr`，但对应 authority / 父链连接不可达，auth 不会再回退为本地 authority；部署侧应接受显式失败语义。
