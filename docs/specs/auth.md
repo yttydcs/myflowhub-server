@@ -13,9 +13,15 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - TargetID=0 仅表示“向子节点广播，不回父”，**不**表示上送；上送父/权威需写明 NodeID。
 - Major：命令/状态类用 `MajorCmd`；响应可用 `MajorOKResp`。
 - 权威选择：
-  - 若显式配置 `authority.node_id`，则该 `node_id` 是唯一 authority；只有当前连接表里存在该节点连接时才可上送，**不得**回退为父节点或本地 authority。
-  - 若未配置 `authority.node_id` 且已配置父链，则直接父节点是唯一 authority；父链不可达时，**不得**回退为本地 authority。
-  - 仅在既未配置 `authority.node_id` 也未配置父链时，本地才是 authority。
+  - 默认 legacy 模式：
+    - 若显式配置 `authority.node_id`，则该 `node_id` 是唯一 authority；只有当前连接表里存在该节点连接时才可上送，**不得**回退为父节点或本地 authority。
+    - 若未配置 `authority.node_id` 且已配置父链，则直接父节点是唯一 authority；父链不可达时，**不得**回退为本地 authority。
+    - 仅在既未配置 `authority.node_id` 也未配置父链时，本地才是 authority。
+  - `auth.authority_mode=semi-central`：
+    - root 通过 `authority_policy_sync` 下发运行时 authority lease，声明当前 `effective_authority_id`。
+    - 非 root 节点**不会**把直接父节点视为最终 authority；当 lease 有效时，`assist_register / assist_login / assist_query_credential` 使用 `SourceID=发起 edge hub`、`TargetID=effective_authority_id` 上送，途中节点只按 `TargetID` 转发，不建立本地 pending/binding。
+    - 若 lease 尚未收到或已过期，但父链仍在线，则 admission 相关 assist 请求允许按父链逐级上送，以保留 parent bootstrap / 初始 register 时序；一旦父链断开，新准入冻结。
+    - 半中心退化期只允许“本地已知身份”登录；需要上游 authority 的 login / register / assist_query_credential 都返回 `code=4500,msg=\"authority unavailable\"`。
 
 密钥与持久化
 ------------
@@ -64,6 +70,10 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - list_roles / _resp: `{"offset,omitempty","limit,omitempty","role,omitempty","node_ids,omitempty"}` → `{"code","msg,omitempty","total","roles":[{node_id,role,perms}]}`。  
   - perms_invalidate: `{"node_ids,omitempty","reason,omitempty","refresh,omitempty"}`；清缓存，可选触发上行刷新；向子节点广播（target=0）。  
   - perms_snapshot: 下发/广播权限快照（结构见 core/permission.Snapshot）。
+- authority_policy_sync  
+  - data: `{"mode","effective_authority_id","epoch","ttl_sec"}`  
+  - 仅 root 负责起源；非 root 仅接受来自父连接的同步并继续下发给子节点。  
+  - `epoch` 更小的同步会被忽略；相同 `epoch` 仅用于刷新 TTL，不写入持久化。
 - 受控准入动作（都要求调用方已登录并显式命中 `auth.*` 权限）  
   - list_pending_registers / _resp  
     - req: `{"offset,omitempty","limit,omitempty","device_id,omitempty"}`  
@@ -101,7 +111,9 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - authority 不可达：
   - 当显式 authority 或已配置父链不可达时，普通 `register` 返回 `code=4500,msg="authority unavailable"`，不会回退为本地 authority。
   - `login` 中依赖上游 authority 的路径（例如本地缺 credential / 本地未命中需 assist）同样返回 `code=4500,msg="authority unavailable"`。
+  - 半中心模式下，lease 过期本身**不会**阻塞一个仍然在线的父链 bootstrap 路径；真正的冻结条件是“需要上游 authority，但当前父链不可用”。
 - approve 流程：`approve_register` 只完成“批准并预留身份”，不会直接把申请方接入网络；申请方必须再次发起 `register`。
+  - 当前 approve / reject / permit 仍是 authority 本地操作；本轮没有实现“任意子节点发起远程审批”的分布式审批链路。
 - permit 流程：permit 一次性、绑定 `device_id`，成功消费后立即失效；`device_id` 不匹配不会消费 permit。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
 - 直连名称缓存：当 direct child 在 register/login 或对应 assist 回包中携带 `display_name` 时，直接父节点可以把该值缓存到连接 metadata，供 management `list_nodes` 低成本返回；缺失时保持回退 `node_id`。
@@ -121,6 +133,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 配置键
 ------
 - 权威/持久化：`authority.node_id`，`auth.disable_persist`（true 不读写 trusted_nodes），`auth.node_privkey`，`auth.node_pubkey`，`auth.trusted_nodes`（JSON map，由文件填充）。
+- 半中心 authority lease：`auth.authority_mode=semi-central`，`auth.authority_policy_ttl_sec`
 - 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:superadmin;2:admin;3:node`），`auth.role_perms`（例 `superadmin:*;admin:p1,p2;node:p3`）。
 - 开箱默认角色层级：
   - `superadmin:*`
@@ -161,3 +174,5 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - parent hub 在受控准入网络中应配置 `parent.join_permit`；否则 pre-start bootstrap 会收到 `status=pending/rejected` 并显式启动失败。
 - 初次 permit / approve 成功后的 parent bootstrap，后续在持久 parent 连接上的 register 属于“已有身份的幂等 rebind”，不再要求新的 permit。
 - 若配置了 `authority.node_id` 或 `parent.addr`，但对应 authority / 父链连接不可达，auth 不会再回退为本地 authority；部署侧应接受显式失败语义。
+- 半中心模式是“root authority + 断链只读登录”的运行时约束，不会把 `effective_authority_id` 落盘到配置；重启后需要 root 重新下发 lease。
+- 半中心模式下只有 admission 上送链路做了多跳 remote authority 转发；审批列表/approve/reject/permit 仍建议从 authority 所在节点操作。

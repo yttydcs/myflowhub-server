@@ -3,8 +3,7 @@
 > 本文档为“半自动文档”：
 > - single source-of-truth：`protocol/*/types.go`
 > - **不要手工修改** `<!-- BEGIN GENERATED -->` 与 `<!-- END GENERATED -->` 中间的内容
-> - canonical 生成入口位于 `MyFlowHub-Proto/docs/specs/protocol_map.md`
-> - 本仓库保留同步副本：`docs/specs/protocol_map.md`
+> - 更新方式：`go run ./cmd/protocolmapgen -write -out docs/protocol_map.md`
 
 <!-- BEGIN GENERATED -->
 ## SubProto Overview
@@ -57,6 +56,8 @@
 ## Auth (SubProto=2)
 
 **Actions**
+- `ActionApproveRegister = "approve_register"`
+- `ActionApproveRegisterResp = "approve_register_resp"`
 - `ActionAssistLogin = "assist_login"`
 - `ActionAssistLoginResp = "assist_login_resp"`
 - `ActionAssistOffline = "assist_offline"`
@@ -64,8 +65,13 @@
 - `ActionAssistQueryCredResp = "assist_query_credential_resp"`
 - `ActionAssistRegister = "assist_register"`
 - `ActionAssistRegisterResp = "assist_register_resp"`
+- `ActionAuthorityPolicySync = "authority_policy_sync"`
 - `ActionGetPerms = "get_perms"`
 - `ActionGetPermsResp = "get_perms_resp"`
+- `ActionIssueRegisterPermit = "issue_register_permit"`
+- `ActionIssueRegisterPermitResp = "issue_register_permit_resp"`
+- `ActionListPendingRegisters = "list_pending_registers"`
+- `ActionListPendingRegistersResp = "list_pending_registers_resp"`
 - `ActionListRoles = "list_roles"`
 - `ActionListRolesResp = "list_roles_resp"`
 - `ActionLogin = "login"`
@@ -75,22 +81,38 @@
 - `ActionPermsSnapshot = "perms_snapshot"`
 - `ActionRegister = "register"`
 - `ActionRegisterResp = "register_resp"`
+- `ActionRejectRegister = "reject_register"`
+- `ActionRejectRegisterResp = "reject_register_resp"`
 - `ActionRevoke = "revoke"`
+- `ActionRevokeRegisterPermit = "revoke_register_permit"`
+- `ActionRevokeRegisterPermitResp = "revoke_register_permit_resp"`
 - `ActionRevokeResp = "revoke_resp"`
 - `ActionUpLogin = "up_login"`
 - `ActionUpLoginResp = "up_login_resp"`
 
 **Payload types**
+- `ApproveRegisterReq`
+- `ApproveRegisterResp`
+- `AuthorityPolicySyncData`
 - `InvalidateData`
+- `IssueRegisterPermitReq`
+- `IssueRegisterPermitResp`
+- `ListPendingRegistersReq`
+- `ListPendingRegistersResp`
 - `ListRolesReq`
 - `LoginData`
 - `Message`
 - `OfflineData`
+- `PendingRegisterInfo`
 - `PermsQueryData`
 - `QueryCredData`
 - `RegisterData`
+- `RejectRegisterReq`
+- `RejectRegisterResp`
 - `RespData`
 - `RevokeData`
+- `RevokeRegisterPermitReq`
+- `RevokeRegisterPermitResp`
 - `RolePermEntry`
 - `UpLoginData`
 
@@ -231,18 +253,40 @@
 **Actions**
 - `ActionCall = "call"`
 - `ActionCallResp = "call_resp"`
+- `ActionCapHeartbeat = "cap_heartbeat"`
+- `ActionCapQuery = "cap_query"`
+- `ActionCapQueryResp = "cap_query_resp"`
+- `ActionCapSnapshot = "cap_snapshot"`
+- `ActionCapSyncResp = "cap_sync_resp"`
+- `ActionCapUpsert = "cap_upsert"`
+- `ActionCapWithdraw = "cap_withdraw"`
 
 **Payload types**
 - `CallReq`
 - `CallResp`
+- `CapHeartbeatReq`
+- `CapQueryReq`
+- `CapQueryResp`
+- `CapSnapshotReq`
+- `CapSyncResp`
+- `CapUpsertReq`
+- `CapWithdrawReq`
+- `CapabilityDescriptor`
+- `CapabilityKey`
+- `CapabilityRoute`
 - `Message`
 
 **Other constants**
 - `PermExecCall = "exec.call"`
+- `PermExecCapQuery = "exec.cap.query"`
+- `PermExecCapSync = "exec.cap.sync"`
 
 <!-- END GENERATED -->
 
 ## Notes（Manual）
+- Management（Nodes）：
+  - `list_nodes`：仅返回 downstream children（直连子节点）；不包含 upstream parent link。
+  - `list_subtree`：返回 `list_nodes` 的结果 + self（不递归；更接近 “direct + self”）。
+  - `nodes[].has_children`：best-effort hint（可能缺失/为 false），客户端应以实际 `list_nodes` 结果为准。
 - Auth：login/register 使用签名（ES256）+ nonce + timestamp（具体语义以实现侧为准；此处仅做提示）。
-
 
