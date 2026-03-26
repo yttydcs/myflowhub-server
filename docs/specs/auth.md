@@ -121,13 +121,19 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 配置键
 ------
 - 权威/持久化：`authority.node_id`，`auth.disable_persist`（true 不读写 trusted_nodes），`auth.node_privkey`，`auth.node_pubkey`，`auth.trusted_nodes`（JSON map，由文件填充）。
-- 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:admin;2:node`），`auth.role_perms`（例 `admin:p1,p2;node:p3`）。
+- 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:superadmin;2:admin;3:node`），`auth.role_perms`（例 `superadmin:*;admin:p1,p2;node:p3`）。
+- 开箱默认角色层级：
+  - `superadmin:*`
+  - `admin:file.read,file.write,flow.set,flow.delete,exec.call,exec.cap.query,exec.cap.sync,var.private_set,var.revoke,var.subscribe,auth.revoke,auth.pending.list,auth.register.approve,auth.register.reject,auth.permit.issue,auth.permit.revoke`
+  - `node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync`
+  - `auth.default_role=node`
+  - `auth.default_perms=""`
 - 受控准入：  
   - `auth.register.require_approval`：`true` 时普通 register 先进入 pending  
   - `auth.register.pending_ttl_sec`：pending 与 approved 预留记录 TTL  
   - `auth.register.permit_ttl_sec`：permit 默认 TTL  
   - `auth.bootstrap.first_register.enabled`：启用首个注册 bootstrap 槽位  
-  - `auth.bootstrap.first_register.role`：bootstrap 命中后授予的角色，默认 `admin`；必须是已定义角色  
+  - `auth.bootstrap.first_register.role`：bootstrap 命中后授予的角色，默认 `superadmin`；必须是已定义角色  
   - `auth.bootstrap.first_register.device_id`：允许走 bootstrap 的唯一设备标识  
   - `auth.bootstrap.first_register.pubkey`：可选；配置后要求请求公钥必须匹配  
   - `auth.bootstrap.first_register.epoch`：正整数；同一 epoch 只消费一次，手工提升后才可重新开启  
@@ -151,6 +157,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - 节点密钥与 trusted_nodes 启动时自动生成/读取，请妥善保护 `config/node_keys.json`、`config/trusted_nodes.json`。
 - first-register bootstrap 仅适用于 local authority 冷启动；若配置了 `authority.node_id` 或 `parent.addr`，启用它会被视为非法配置并导致 auth 初始化失败。
 - first-register bootstrap 依赖持久化消费状态；`auth.disable_persist=true` 时不得启用。
+- 当前默认 bootstrap 角色是 `superadmin`；若部署侧显式覆盖为其他角色，仍要求该角色在当前 `auth.role_perms` 中真实存在。
 - parent hub 在受控准入网络中应配置 `parent.join_permit`；否则 pre-start bootstrap 会收到 `status=pending/rejected` 并显式启动失败。
 - 初次 permit / approve 成功后的 parent bootstrap，后续在持久 parent 连接上的 register 属于“已有身份的幂等 rebind”，不再要求新的 permit。
 - 若配置了 `authority.node_id` 或 `parent.addr`，但对应 authority / 父链连接不可达，auth 不会再回退为本地 authority；部署侧应接受显式失败语义。
