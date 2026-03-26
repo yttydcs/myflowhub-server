@@ -126,8 +126,8 @@ func DefaultOptions() Options {
 		AuthDefaultRole:  "node",
 		AuthDefaultPerms: "",
 		AuthNodeRoles:    "",
-		// Default node role perms; HUB_AUTH_ROLE_PERMS may override it.
-		AuthRolePerms: "node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync",
+		// Default role hierarchy; HUB_AUTH_ROLE_PERMS may override it.
+		AuthRolePerms: coreconfig.DefaultAuthRolePerms,
 
 		WorkDir:            "",
 		SelfID:             "",
