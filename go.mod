@@ -6,7 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/yttydcs/myflowhub-core v0.4.9
 	github.com/yttydcs/myflowhub-proto v0.1.5
-	github.com/yttydcs/myflowhub-subproto/auth v0.1.4
+	github.com/yttydcs/myflowhub-subproto/auth v0.1.5
 	github.com/yttydcs/myflowhub-subproto/exec v0.1.2
 	github.com/yttydcs/myflowhub-subproto/file v0.1.4
 	github.com/yttydcs/myflowhub-subproto/flow v0.1.2
