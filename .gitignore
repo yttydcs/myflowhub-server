@@ -1,3 +1,5 @@
 **/config/trusted_nodes.json
 **/config/node_keys.json
+/config/
+/flows/
 .ace-tool/
