@@ -30,7 +30,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - `bindings`: device_id -> `{node_id,pubkey,role,perms}`，注入 whitelist。
   - `meta.pending_registers`: 待审批注册请求列表。
   - `meta.approved_registers`: 已批准但尚未完成最终 register 的预留身份。
-  - `meta.register_permits`: 一次性角色 permit 列表。
+- `meta.register_permits`: 当前活动的一次性角色 permit 列表；成功消费、显式撤销或过期后移除。
   - `meta.first_register_bootstrap`: 首个注册 bootstrap 的消费状态（`consumed_epoch` 等）。
 - `auth.disable_persist=true` 时，不读写 `trusted_nodes.json`，因此 pending / approved / permit 也不会落盘。
 
@@ -79,6 +79,11 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
     - req: `{"offset,omitempty","limit,omitempty","device_id,omitempty"}`  
     - resp: `{"code","msg,omitempty","total","items":[{"request_id","device_id","requested_role,omitempty","display_name,omitempty","created_at","expires_at"}]}`  
     - 权限：`auth.pending.list`
+  - list_register_permits / _resp  
+    - req: `{"offset,omitempty","limit,omitempty","device_id,omitempty"}`  
+    - resp: `{"code","msg,omitempty","total","items":[{"permit","device_id","role","issued_by,omitempty","issued_at","expires_at"}]}`  
+    - 语义：只返回当前仍有效的 permit；已消费、已撤销、已过期的不返回。  
+    - 权限：`auth.permit.issue` 或 `auth.permit.revoke`
   - approve_register / _resp  
     - req: `{"request_id","role,omitempty"}`  
     - resp: `{"code","msg,omitempty","request_id","device_id","node_id","role,omitempty","status":"approved"}`  
@@ -115,6 +120,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - approve 流程：`approve_register` 只完成“批准并预留身份”，不会直接把申请方接入网络；申请方必须再次发起 `register`。
   - 当前 approve / reject / permit 仍是 authority 本地操作；本轮没有实现“任意子节点发起远程审批”的分布式审批链路。
 - permit 流程：permit 一次性、绑定 `device_id`，成功消费后立即失效；`device_id` 不匹配不会消费 permit。
+- permit list 流程：`list_register_permits` 只返回当前活动 permit；消费、撤销、过期后的 permit 不保留在列表中。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
 - 直连名称缓存：当 direct child 在 register/login 或对应 assist 回包中携带 `display_name` 时，直接父节点可以把该值缓存到连接 metadata，供 management `list_nodes` 低成本返回；缺失时保持回退 `node_id`。
 - 权限：角色/权限来自配置与白名单；perms_invalidate 清缓存并可刷新；perms_snapshot 应用后广播下行。

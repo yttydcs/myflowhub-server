@@ -3,7 +3,7 @@
 > 本文档为“半自动文档”：
 > - single source-of-truth：`protocol/*/types.go`
 > - **不要手工修改** `<!-- BEGIN GENERATED -->` 与 `<!-- END GENERATED -->` 中间的内容
-> - 更新方式：`go run ./cmd/protocolmapgen -write -out docs/protocol_map.md`
+> - 更新方式：使用 `MyFlowHub-Proto/cmd/protocolmapgen`，指向本仓 `protocol/` 并写回当前文件
 
 <!-- BEGIN GENERATED -->
 ## SubProto Overview
@@ -72,6 +72,8 @@
 - `ActionIssueRegisterPermitResp = "issue_register_permit_resp"`
 - `ActionListPendingRegisters = "list_pending_registers"`
 - `ActionListPendingRegistersResp = "list_pending_registers_resp"`
+- `ActionListRegisterPermits = "list_register_permits"`
+- `ActionListRegisterPermitsResp = "list_register_permits_resp"`
 - `ActionListRoles = "list_roles"`
 - `ActionListRolesResp = "list_roles_resp"`
 - `ActionLogin = "login"`
@@ -99,6 +101,8 @@
 - `IssueRegisterPermitResp`
 - `ListPendingRegistersReq`
 - `ListPendingRegistersResp`
+- `ListRegisterPermitsReq`
+- `ListRegisterPermitsResp`
 - `ListRolesReq`
 - `LoginData`
 - `Message`
@@ -107,6 +111,7 @@
 - `PermsQueryData`
 - `QueryCredData`
 - `RegisterData`
+- `RegisterPermitInfo`
 - `RejectRegisterReq`
 - `RejectRegisterResp`
 - `RespData`
