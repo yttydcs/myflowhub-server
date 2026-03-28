@@ -200,8 +200,8 @@
 - [x] `STRM-COMP-1` 修复 `hubruntime` 对已发布 Core 版本的编译兼容
 - [x] `STRM-IT-1` 新增 root / hub `stream` 多节点集成测试
 - [x] `STRM-VAL-1` 在 `GOWORK=off` 下完成版本核对与仓库验证
-- [ ] `STRM-REL-2` 创建并推送 `v0.0.12`
-- [ ] `STRM-DOC-1` 归档本轮 Server 发布与集成结果
+- [x] `STRM-REL-2` 创建并推送 `v0.0.12`
+- [x] `STRM-DOC-1` 归档本轮 Server 发布与集成结果
 
 ### 任务明细
 

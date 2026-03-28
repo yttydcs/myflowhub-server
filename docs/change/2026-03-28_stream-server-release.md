@@ -141,6 +141,10 @@
 - 发布动作
   - 本次 worktree 提交对应 Server patch tag：`v0.0.12`
   - 推送策略：不使用主仓 `main`，直接从本 worktree 分支提交推送 branch + tag
+  - 远端校验：
+    - `git ls-remote --heads origin refs/heads/chore/stream-subproto-design`
+    - `git ls-remote --tags origin refs/tags/v0.0.12`
+  - 结果：通过
 
 ## 3.3 Code Review 结论
 
