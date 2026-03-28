@@ -19,7 +19,9 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
     - 仅在既未配置 `authority.node_id` 也未配置父链时，本地才是 authority。
   - `auth.authority_mode=semi-central`：
     - root 通过 `authority_policy_sync` 下发运行时 authority lease，声明当前 `effective_authority_id`。
-    - 非 root 节点**不会**把直接父节点视为最终 authority；当 lease 有效时，`assist_register / assist_login / assist_query_credential` 使用 `SourceID=发起 edge hub`、`TargetID=effective_authority_id` 上送，途中节点只按 `TargetID` 转发，不建立本地 pending/binding。
+    - 非 root 节点**不会**把直接父节点视为最终 authority；当 lease 有效时：
+      - `assist_register / assist_login / assist_query_credential` 使用 `SourceID=发起 edge hub`、`TargetID=effective_authority_id` 上送，途中节点只按 `TargetID` 转发，不建立本地 pending/binding。
+      - `list_pending_registers / approve_register / reject_register / list_register_permits / issue_register_permit / revoke_register_permit` 保持 `SourceID=真实操作者`、`TargetID=effective_authority_id` 上送，authority 侧只在当前入站连接确实拥有该 `SourceID` 路由归属时才接受执行。
     - 若 lease 尚未收到或已过期，但父链仍在线，则 admission 相关 assist 请求允许按父链逐级上送，以保留 parent bootstrap / 初始 register 时序；一旦父链断开，新准入冻结。
     - 半中心退化期只允许“本地已知身份”登录；需要上游 authority 的 login / register / assist_query_credential 都返回 `code=4500,msg=\"authority unavailable\"`。
 
@@ -75,6 +77,7 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
   - 仅 root 负责起源；非 root 仅接受来自父连接的同步并继续下发给子节点。  
   - `epoch` 更小的同步会被忽略；相同 `epoch` 仅用于刷新 TTL，不写入持久化。
 - 受控准入动作（都要求调用方已登录并显式命中 `auth.*` 权限）  
+  - 这些动作既可在 authority 本机执行，也可在 remote authority 场景由任意已登录且具备对应权限的节点发起；authority 侧权限判断始终基于请求头中的真实 `SourceID`。  
   - list_pending_registers / _resp  
     - req: `{"offset,omitempty","limit,omitempty","device_id,omitempty"}`  
     - resp: `{"code","msg,omitempty","total","items":[{"request_id","device_id","requested_role,omitempty","display_name,omitempty","created_at","expires_at"}]}`  
@@ -116,9 +119,10 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - authority 不可达：
   - 当显式 authority 或已配置父链不可达时，普通 `register` 返回 `code=4500,msg="authority unavailable"`，不会回退为本地 authority。
   - `login` 中依赖上游 authority 的路径（例如本地缺 credential / 本地未命中需 assist）同样返回 `code=4500,msg="authority unavailable"`。
+  - remote authority admin 动作在无法找到 authority 路由时，同样返回 `code=4500,msg="authority unavailable"`，而不是伪装成本地权限不足。
   - 半中心模式下，lease 过期本身**不会**阻塞一个仍然在线的父链 bootstrap 路径；真正的冻结条件是“需要上游 authority，但当前父链不可用”。
 - approve 流程：`approve_register` 只完成“批准并预留身份”，不会直接把申请方接入网络；申请方必须再次发起 `register`。
-  - 当前 approve / reject / permit 仍是 authority 本地操作；本轮没有实现“任意子节点发起远程审批”的分布式审批链路。
+  - `approve_register / reject_register / list_pending_registers / issue_register_permit / revoke_register_permit / list_register_permits` 在 remote authority 场景下仍只修改 authority 本地状态；中间节点只负责转发与回包，不复制 pending / permit 数据。
 - permit 流程：permit 一次性、绑定 `device_id`，成功消费后立即失效；`device_id` 不匹配不会消费 permit。
 - permit list 流程：`list_register_permits` 只返回当前活动 permit；消费、撤销、过期后的 permit 不保留在列表中。
 - 登录：本地查 whitelist，缺公钥时先 assist_query 补齐；命中即验签并回 login_resp；未命中则 assist_login。成功后向父发送 up_login（逐跳报路由与公钥）。
@@ -181,4 +185,4 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - 初次 permit / approve 成功后的 parent bootstrap，后续在持久 parent 连接上的 register 属于“已有身份的幂等 rebind”，不再要求新的 permit。
 - 若配置了 `authority.node_id` 或 `parent.addr`，但对应 authority / 父链连接不可达，auth 不会再回退为本地 authority；部署侧应接受显式失败语义。
 - 半中心模式是“root authority + 断链只读登录”的运行时约束，不会把 `effective_authority_id` 落盘到配置；重启后需要 root 重新下发 lease。
-- 半中心模式下只有 admission 上送链路做了多跳 remote authority 转发；审批列表/approve/reject/permit 仍建议从 authority 所在节点操作。
+- 半中心模式下，approval / permit 管理与 assist admission 一样支持多跳 remote authority 转发；若远程管理仍失败，优先检查消费者依赖版本和 authority 路由归属是否已建立。
