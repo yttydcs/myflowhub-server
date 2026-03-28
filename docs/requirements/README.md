@@ -6,6 +6,8 @@
 - 当前仓库的长期文档以技术规范为主。
 - 本轮新增 Flow 数据流 DAG 需求文档：
   - [flow_data_dag.md](flow_data_dag.md)
+- 本轮新增 Stream 子协议需求文档：
+  - [stream.md](stream.md)
 
 ## Rules
 - 只放长期稳定真相，不放单次 workflow 结果。

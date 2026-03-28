@@ -12,6 +12,9 @@
 - 结果归档记录必须显式说明验证方式与回滚方案。
 
 ## Current Entries
+- [2026-03-28_stream-server-release.md](2026-03-28_stream-server-release.md)
+- [2026-03-28_stream-server-integration.md](2026-03-28_stream-server-integration.md)
+- [2026-03-28_stream-subproto-design.md](2026-03-28_stream-subproto-design.md)
 - [2026-03-26_auth-semi-central-authority.md](2026-03-26_auth-semi-central-authority.md)
 - [2026-03-25_server-defaultset-deps-release-chain.md](2026-03-25_server-defaultset-deps-release-chain.md)
 - [2026-03-25_pluggable-state-backend.md](2026-03-25_pluggable-state-backend.md)
