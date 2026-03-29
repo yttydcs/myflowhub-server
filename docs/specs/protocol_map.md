@@ -17,6 +17,7 @@
 | 5 | File | `protocol/file` |
 | 6 | Flow | `protocol/flow` |
 | 7 | Exec | `protocol/exec` |
+| 8 | Stream | `protocol/stream` |
 
 ## Management (SubProto=1)
 
@@ -285,6 +286,96 @@
 - `PermExecCall = "exec.call"`
 - `PermExecCapQuery = "exec.cap.query"`
 - `PermExecCapSync = "exec.cap.sync"`
+
+## Stream (SubProto=8)
+
+**Actions**
+- `ActionAnnounce = "announce"`
+- `ActionAnnounceConsumer = "announce_consumer"`
+- `ActionAnnounceConsumerResp = "announce_consumer_resp"`
+- `ActionAnnounceResp = "announce_resp"`
+- `ActionConnect = "connect"`
+- `ActionConnectResp = "connect_resp"`
+- `ActionDisconnect = "disconnect"`
+- `ActionDisconnectResp = "disconnect_resp"`
+- `ActionGetConsumer = "get_consumer"`
+- `ActionGetConsumerResp = "get_consumer_resp"`
+- `ActionGetSource = "get_source"`
+- `ActionGetSourceResp = "get_source_resp"`
+- `ActionListConsumers = "list_consumers"`
+- `ActionListConsumersResp = "list_consumers_resp"`
+- `ActionListSources = "list_sources"`
+- `ActionListSourcesResp = "list_sources_resp"`
+- `ActionSignal = "signal"`
+- `ActionSignalResp = "signal_resp"`
+- `ActionSubscribe = "subscribe"`
+- `ActionSubscribeResp = "subscribe_resp"`
+- `ActionUnsubscribe = "unsubscribe"`
+- `ActionUnsubscribeResp = "unsubscribe_resp"`
+- `ActionWithdraw = "withdraw"`
+- `ActionWithdrawConsumer = "withdraw_consumer"`
+- `ActionWithdrawConsumerResp = "withdraw_consumer_resp"`
+- `ActionWithdrawResp = "withdraw_resp"`
+
+**Payload types**
+- `AnnounceConsumerReq`
+- `AnnounceConsumerResp`
+- `AnnounceReq`
+- `AnnounceResp`
+- `ConnectReq`
+- `ConnectResp`
+- `ConsumerDescriptor`
+- `DisconnectReq`
+- `DisconnectResp`
+- `GetConsumerReq`
+- `GetConsumerResp`
+- `GetSourceReq`
+- `GetSourceResp`
+- `ListConsumersReq`
+- `ListConsumersResp`
+- `ListSourcesReq`
+- `ListSourcesResp`
+- `Message`
+- `SignalReq`
+- `SignalResp`
+- `SourceDescriptor`
+- `StreamAckHeaderV1`
+- `StreamDataHeaderV1`
+- `SubscribeReq`
+- `SubscribeResp`
+- `UnsubscribeReq`
+- `UnsubscribeResp`
+- `WithdrawConsumerReq`
+- `WithdrawConsumerResp`
+- `WithdrawReq`
+- `WithdrawResp`
+
+**Other constants**
+- `DataFlagConfig = 4`
+- `DataFlagDiscontinuity = 8`
+- `DataFlagEOS = 1`
+- `DataFlagKeyframe = 2`
+- `HeaderVersionV1 = 1`
+- `KindAck = 0x03`
+- `KindCtrl = 0x01`
+- `KindData = 0x02`
+- `ModeBounded = "bounded"`
+- `ModeLive = "live"`
+- `PermStreamConnect = "stream.connect"`
+- `PermStreamConsume = "stream.consume"`
+- `PermStreamPublish = "stream.publish"`
+- `PermStreamSubscribe = "stream.subscribe"`
+- `SignalOpCustom = "custom"`
+- `SignalOpKeyframeRequest = "keyframe_request"`
+- `SignalOpMetadataUpdate = "metadata_update"`
+- `SignalOpPause = "pause"`
+- `SignalOpResume = "resume"`
+- `StreamKindCustom = "custom"`
+- `StreamKindMusic = "music"`
+- `StreamKindText = "text"`
+- `StreamKindVideo = "video"`
+- `UnitModeChunk = "chunk"`
+- `UnitModeFrame = "frame"`
 
 <!-- END GENERATED -->
 

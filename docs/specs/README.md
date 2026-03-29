@@ -10,6 +10,7 @@
 - [flow.md](flow.md)
 - [permission.md](permission.md)
 - [protocol_map.md](protocol_map.md)
+- [stream.md](stream.md)
 - [topicbus.md](topicbus.md)
 - [varstore.md](varstore.md)
 

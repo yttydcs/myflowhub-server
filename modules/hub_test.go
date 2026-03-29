@@ -7,6 +7,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/eventbus"
+	streamproto "github.com/yttydcs/myflowhub-server/protocol/stream"
 )
 
 type stubHandler struct {
@@ -71,6 +72,20 @@ func TestDefaultHub_UniqueSubProtoAndNotEmpty(t *testing.T) {
 		}
 		seen[sub] = struct{}{}
 	}
+}
+
+func TestDefaultHub_ContainsStream(t *testing.T) {
+	cfg := config.NewMap(map[string]string{})
+	set, err := DefaultHub(cfg, nil)
+	if err != nil {
+		t.Fatalf("DefaultHub() err: %v", err)
+	}
+	for _, h := range set.Handlers {
+		if h != nil && h.SubProto() == streamproto.SubProtoStream {
+			return
+		}
+	}
+	t.Fatalf("DefaultHub() missing stream subproto=%d", streamproto.SubProtoStream)
 }
 
 func TestBindServerHooks_OnlyBindableCalled(t *testing.T) {

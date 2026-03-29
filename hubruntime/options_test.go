@@ -15,7 +15,12 @@ func TestDefaultOptions_AuthRoleHierarchyDefaults(t *testing.T) {
 	if opts.AuthDefaultPerms != "" {
 		t.Fatalf("unexpected auth default perms: got %q want empty", opts.AuthDefaultPerms)
 	}
-	if opts.AuthRolePerms != coreconfig.DefaultAuthRolePerms {
-		t.Fatalf("unexpected auth role perms: got %q want %q", opts.AuthRolePerms, coreconfig.DefaultAuthRolePerms)
+	if opts.AuthRolePerms != defaultAuthRolePerms {
+		t.Fatalf("unexpected auth role perms: got %q want %q", opts.AuthRolePerms, defaultAuthRolePerms)
+	}
+
+	cfg := configDataFromOptions(opts)
+	if cfg[coreconfig.KeyAuthRolePerms] != defaultAuthRolePerms {
+		t.Fatalf("unexpected transport auth role perms: got %q want %q", cfg[coreconfig.KeyAuthRolePerms], defaultAuthRolePerms)
 	}
 }

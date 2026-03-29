@@ -38,6 +38,8 @@ github.com/yttydcs/myflowhub-subproto/forward v0.1.1 h1:kyoElXm+T4lFIeZVJTW6qmBT
 github.com/yttydcs/myflowhub-subproto/forward v0.1.1/go.mod h1:64KQQ5Al/LObNaO4ZbhoQ6jO+8URgBlG6b9I/iStTFA=
 github.com/yttydcs/myflowhub-subproto/management v0.1.4 h1:3vygpBTnPFNoeMqOt8ZEL1zxqHyu81Er+mIUiJmvgG4=
 github.com/yttydcs/myflowhub-subproto/management v0.1.4/go.mod h1:KFi8w6iJQfj7Komdge/vcNgWWvf6JvNlx2H9bEwH14Q=
+github.com/yttydcs/myflowhub-subproto/stream v0.1.0 h1:VHPfRv6WgEwcAnvcNJCbPaYNIaviKTiEW0pggIEbsvc=
+github.com/yttydcs/myflowhub-subproto/stream v0.1.0/go.mod h1:Scb1Sq5mzSaZssdzSR98bHWugcA6y37dbmeyDOoo5B0=
 github.com/yttydcs/myflowhub-subproto/topicbus v0.1.2 h1:ATpqY4sgd+H4XirtV3JctOmbzHsDCIMsnBtW87n8qEg=
 github.com/yttydcs/myflowhub-subproto/topicbus v0.1.2/go.mod h1:U4CPXXyIaEfFrNnc1lnbbCnUTYmEbWYe5lRNydI1E1o=
 github.com/yttydcs/myflowhub-subproto/varstore v0.1.4 h1:KUygw8ulrbxnfoG9oP71lcdOrNvAHGUIcI1L6dJFzZs=

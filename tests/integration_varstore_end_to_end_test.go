@@ -154,6 +154,7 @@ func bindConnNodeID(t *testing.T, srv core.IServer, conn net.Conn, nodeID uint32
 		srv.ConnManager().Range(func(c core.IConnection) bool {
 			if c.RemoteAddr() != nil && c.RemoteAddr().String() == clientAddr {
 				c.SetMeta("nodeID", nodeID)
+				srv.ConnManager().UpdateNodeIndex(nodeID, c)
 				found = true
 				return false
 			}
@@ -178,6 +179,7 @@ func bindParentChildNodeIDs(t *testing.T, rootSrv, hubSrv core.IServer, hubNodeI
 				if role, ok := c.GetMeta(core.MetaRoleKey); ok {
 					if s, ok2 := role.(string); ok2 && s == core.RoleChild {
 						c.SetMeta("nodeID", hubNodeID)
+						rootSrv.ConnManager().UpdateNodeIndex(hubNodeID, c)
 						rootBound = true
 						return false
 					}
@@ -190,6 +192,7 @@ func bindParentChildNodeIDs(t *testing.T, rootSrv, hubSrv core.IServer, hubNodeI
 				if role, ok := c.GetMeta(core.MetaRoleKey); ok {
 					if s, ok2 := role.(string); ok2 && s == core.RoleParent {
 						c.SetMeta("nodeID", rootNodeID)
+						hubSrv.ConnManager().UpdateNodeIndex(rootNodeID, c)
 						hubBound = true
 						return false
 					}

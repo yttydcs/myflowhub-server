@@ -63,6 +63,33 @@ func TestLayeredConfigRuntimeOnlySet(t *testing.T) {
 	assertConfigValue(t, reloaded, "node.display_name", "Persisted Hub")
 }
 
+func TestLayeredConfigUsesServerDefaultAuthRolePerms(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime_config.json")
+
+	cfg, err := newLayeredConfig(path, configDataFromOptions(DefaultOptions()), nil)
+	if err != nil {
+		t.Fatalf("newLayeredConfig: %v", err)
+	}
+
+	assertConfigValue(t, cfg, coreconfig.KeyAuthRolePerms, defaultAuthRolePerms)
+}
+
+func TestLayeredConfigAllowsExplicitEmptyAuthRolePermsOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime_config.json")
+
+	opts := DefaultOptions()
+	opts.AuthRolePerms = ""
+	opts.AddConfigOverrideKeys(coreconfig.KeyAuthRolePerms)
+	opts.Normalize()
+
+	cfg, err := newLayeredConfig(path, configDataFromOptions(DefaultOptions()), explicitConfigDataFromOptions(opts))
+	if err != nil {
+		t.Fatalf("newLayeredConfig: %v", err)
+	}
+
+	assertConfigValue(t, cfg, coreconfig.KeyAuthRolePerms, "")
+}
+
 func TestApplyConfigToOptions(t *testing.T) {
 	opts := DefaultOptions()
 	opts.Addr = ":1234"
