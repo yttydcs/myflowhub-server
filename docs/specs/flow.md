@@ -6,12 +6,14 @@ flow 协议（SubProto=6）规范
 
 - `flow` 子协议用于在任意节点上保存、触发和调度一个 DAG 工作流。
 - 本协议同时定义：
-  - 工作流定义与调度动作（`set/delete/run/status/list/get`）
+  - 工作流定义与调度动作（`set/delete/run/status/detail/list/get`）
   - 节点执行语义
   - 节点间数据传递模型
+  - 单次 run 局部变量模型
 - 第一版数据流增强后的正式节点类型为：
   - `call`
   - `compose`
+  - `set_var`
 - `exec`（SubProto=7）继续负责远程方法调用与权限裁决；`flow` 不复制 `exec.call` 的路由与权限模型。
 
 总览
@@ -23,6 +25,7 @@ flow 协议（SubProto=6）规范
   - `delete`：删除工作流（需要权限 `flow.delete`）
   - `run`：手动触发一次运行
   - `status`：查询运行状态摘要
+  - `detail`：查询指定 run / node 的结果详情
   - `list`：列出执行者当前已知的工作流摘要
   - `get`：读取指定工作流定义
 - 触发器（当前）：支持 `interval` / `event` / `var_changed`
@@ -37,13 +40,14 @@ flow 协议（SubProto=6）规范
   - `flow.set`
   - `flow.delete`
 - 当前版本未为 `run/status/list/get` 单独定义额外权限；它们按 `executor_node` 路由到执行者处理。
+- 当前版本未为 `run/status/detail/list/get` 单独定义额外权限；它们按 `executor_node` 路由到执行者处理。
 
 HeaderTcp 与路由约定
 --------------------
 
 - SubProto 固定为 `6`
 - Major 约定：
-  - 请求帧（`set/delete/run/status/list/get`）：`MajorCmd`
+  - 请求帧（`set/delete/run/status/detail/list/get`）：`MajorCmd`
   - 响应帧（`*_resp`）：`MajorOKResp`
   - 失败响应也使用 `MajorOKResp`，错误通过 payload 的 `code/msg` 表达
 
@@ -166,6 +170,45 @@ HeaderTcp 与路由约定
   - `code`：节点执行结果码
   - `msg`：可选错误说明
 
+### action=detail
+
+请求 `data`：
+
+- `req_id`：UUID（必填）
+- `origin_node`：uint32（可选）
+- `executor_node`：uint32（可选）
+- `flow_id`：UUID（必填）
+- `run_id`：UUID（可选）
+  - 为空时，默认命中该 `flow_id` 的最近一次运行
+- `node_id`：string（必填）
+- `path`：JSON Pointer（可选）
+  - 为空时读取节点根结果
+
+详情语义：
+
+- `detail` 是重数据查询接口，与 `status` 分离
+- 第一版只查询单个节点的结果详情，不返回完整局部变量视图
+- 若 `path` 非空，则在节点根结果上应用 JSON Pointer
+- 若 run / node / path 不存在，返回 `404`
+- 若 `path` 非法，返回 `400`
+- 节点自身状态失败时，仍允许查询其节点状态摘要；仅在请求结果路径不存在时返回 `404`
+
+响应 `action=detail_resp`，`data`：
+
+- `req_id`：回显
+- `code`：`1/400/404/500`
+- `msg`：可选错误说明
+- `executor_node`：实际执行者节点 ID
+- `flow_id`：命中的工作流 ID
+- `run_id`：命中的运行 ID
+- `path`：回显命中的结果路径；空表示根结果
+- `node`：object
+  - `id`：节点 ID
+  - `status`：节点状态摘要
+  - `code`：节点执行结果码
+  - `msg`：可选节点错误说明
+- `result`：命中的 JSON 值
+
 ### action=list
 
 请求 `data`：
@@ -231,7 +274,7 @@ HeaderTcp 与路由约定
 
 - `id`：string（必填，图内唯一）
 - `kind`：string（必填）
-  - 新写入契约：`"call"` | `"compose"`
+  - 新写入契约：`"call"` | `"compose"` | `"set_var"`
 - `allow_fail`：bool（可选，默认 `false`）
 - `retry`：int（可选，默认 `1`）
 - `timeout_ms`：int（可选，默认 `3000`）
@@ -261,6 +304,10 @@ HeaderTcp 与路由约定
   - `code`
   - `msg`
   - `result`
+- `vars`
+  - `<name>`
+    - `value`
+    - `writer_node_id`
 
 `RunContext` 仅在运行时和调试链路中使用，不默认通过 `status_resp` 全量返回。
 
@@ -300,6 +347,14 @@ HeaderTcp 与路由约定
   - `field`：当前仅允许 `flow_id`
 - `run_meta`
   - `field`：当前仅允许 `run_id`
+- `flow_var`
+  - `name`：局部变量名（必填）
+  - `path`：可选 JSON Pointer，默认根变量值
+
+局部变量读取约束：
+
+- 第一版通过 `source.kind=flow_var` 读取局部变量，不新增独立 `get_var` 节点
+- 这样可以复用现有 `args_template/template + inputs` 物化路径，避免为“纯读取”再引入额外节点类型和结果包装层
 
 引用规则：
 
@@ -307,6 +362,8 @@ HeaderTcp 与路由约定
 - 不允许引用当前节点或未来节点
 - `to` 必须是合法 JSON Pointer
 - `required=true` 且来源不存在时，当前节点必须失败
+- `flow_var` 仅允许引用可唯一解析到祖先 `set_var` 写入者的变量名
+- 同一路径上后续 `set_var` 可覆盖更早的同名值；若当前节点的祖先子图中存在多个不可唯一判定先后的同名写入者，则 `set` 阶段必须判定为歧义并拒绝保存
 
 节点类型：call
 --------------
@@ -355,12 +412,31 @@ HeaderTcp 与路由约定
 3. 得到最终结果并写入 `RunContext.nodes[<id>].result`
 4. `compose` 节点不发起远程调用，也不依赖 `exec.call`
 
+节点类型：set_var
+-----------------
+
+`kind=set_var` 的正式写入 spec：
+
+- `name`：string（必填，大小写敏感，仅允许 `[A-Za-z_][A-Za-z0-9_]*`）
+- `template`：任意合法 JSON 值（可选，默认 `null`）
+- `inputs`：`InputBinding[]`（可选）
+- `_ui`：编辑器布局元数据（可选，不参与执行语义）
+
+执行语义：
+
+1. 以 `template` 为基础物化一个 JSON 值
+2. 按声明顺序应用 `inputs`
+3. 得到最终值后写入 `RunContext.vars[<name>]`
+4. 同时把该值写入 `RunContext.nodes[<id>].result`
+5. 当前 run 内，下游节点可通过 `source.kind=flow_var` 读取该值
+
 执行语义
 --------
 
 - 对 `graph` 做拓扑排序；按顺序逐个执行 `nodes`
 - 每个节点执行前，先完成输入物化
 - 每个节点执行后，把状态和结果写入 `RunContext`
+- `set_var` 额外更新 `RunContext.vars` 中对应变量的当前值和写入者
 - `allow_fail=false`
   - 当前节点失败后立即结束整个 run
 - `allow_fail=true`
@@ -383,9 +459,10 @@ HeaderTcp 与路由约定
 - 节点 ID 唯一
 - 边引用的节点存在
 - 图无环
-- `call` / `compose` 的 spec 字段完整
+- `call` / `compose` / `set_var` 的 spec 字段完整
 - `inputs` 中引用的 `node_id` 存在
 - `inputs` 中引用的 `node_id` 是当前节点祖先
+- `flow_var.name` 合法，且可唯一解析到祖先 `set_var` 写入者
 - `to` / `source.path` 是合法 JSON Pointer
 
 持久化与配置
@@ -416,7 +493,9 @@ HeaderTcp 与路由约定
 结果保留策略：
 
 - 运行时可在内存中保留有限数量的历史 run 摘要
-- 完整节点结果不承诺长期持久化，除非后续新增专门的 run detail / archive 能力
+- 完整节点结果可在保留窗口内通过 `detail` 查询
+- 完整节点结果不承诺长期持久化，除非后续新增专门的 run archive 能力
+- flow 局部变量属于 `RunContext` 运行期状态，不参与定义持久化，也不承诺长期保留
 
 错误码建议
 ----------
