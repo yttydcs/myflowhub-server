@@ -12,6 +12,13 @@
 - 结果归档记录必须显式说明验证方式与回滚方案。
 
 ## Current Entries
+- [2026-04-02_server-flow-run-archive-contract.md](2026-04-02_server-flow-run-archive-contract.md)
+- [2026-04-02_server-flow-trigger-dedup-contract.md](2026-04-02_server-flow-trigger-dedup-contract.md)
+- [2026-04-02_server-flow-active-run-limit-contract.md](2026-04-02_server-flow-active-run-limit-contract.md)
+- [2026-04-02_server-flow-retry-backoff-contract.md](2026-04-02_server-flow-retry-backoff-contract.md)
+- [2026-04-02_server-flow-permission-refinement.md](2026-04-02_server-flow-permission-refinement.md)
+- [2026-04-02_server-flow-list-runs-contract.md](2026-04-02_server-flow-list-runs-contract.md)
+- [2026-04-02_server-flow-cancel-run-contract.md](2026-04-02_server-flow-cancel-run-contract.md)
 - [2026-04-02_server-flow-local-vars-docs.md](2026-04-02_server-flow-local-vars-docs.md)
 - [2026-03-29_stream-coordinator-same-child-routing.md](2026-03-29_stream-coordinator-same-child-routing.md)
 - [2026-03-29_stream-mainline-merge.md](2026-03-29_stream-mainline-merge.md)

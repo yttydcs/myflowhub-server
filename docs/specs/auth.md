@@ -147,8 +147,8 @@ auth 协议（SubProto=2，基于 P256 公钥签名）
 - 角色/权限：`auth.default_role`，`auth.default_perms`（逗号分隔），`auth.node_roles`（例 `1:superadmin;2:admin;3:node`），`auth.role_perms`（例 `superadmin:*;admin:p1,p2;node:p3`）。
 - 开箱默认角色层级：
   - `superadmin:*`
-  - `admin:file.read,file.write,flow.set,flow.delete,exec.call,exec.cap.query,exec.cap.sync,var.private_set,var.revoke,var.subscribe,auth.revoke,auth.pending.list,auth.register.approve,auth.register.reject,auth.permit.issue,auth.permit.revoke`
-  - `node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync`
+  - `admin:file.read,file.write,flow.set,flow.delete,flow.run,flow.read,exec.call,exec.cap.query,exec.cap.sync,var.private_set,var.revoke,var.subscribe,auth.revoke,auth.pending.list,auth.register.approve,auth.register.reject,auth.permit.issue,auth.permit.revoke`
+  - `node:file.read,file.write,flow.set,flow.run,flow.read,exec.call,exec.cap.query,exec.cap.sync`
   - `auth.default_role=node`
   - `auth.default_perms=""`
 - 受控准入：  
