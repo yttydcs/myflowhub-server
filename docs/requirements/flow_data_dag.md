@@ -15,7 +15,7 @@
   - `interval/event/var_changed` trigger 默认在已有活动 run 时跳过
   - 该差异尚未形成可声明、可审计的稳定契约
 - 当前 `event/var_changed` 触发器一旦匹配就会立即尝试启动；若上游重复投递同一事件，或短时间内反复发出同一变量变更通知，运行时缺少显式去重窗口来抑制重复 run。
-- 当前保留窗口内的终态 run 仍主要停留在内存；执行器重启后，`status/detail/list_runs` 无法继续读取这些 retained run，缺少显式 run archive。
+- 当前 retained run 虽已支持可选本地 archive，但后端仍固定为本地 JSON sidecar；在需要更强持久化或集中化存储时，仍缺少显式 run archive backend。
 
 ## Goal
 
@@ -29,7 +29,7 @@
   - flow 需要为节点失败重试补齐最小可控的固定间隔 backoff，避免立即重试。
   - flow 需要把“活动 run 上限 / 重入控制”收敛为显式定义字段，而不是依赖隐式入口差异。
   - flow 需要为 `event/var_changed` trigger 提供默认关闭、显式开启的去重窗口，减少重复通知导致的重复启动。
-  - flow 需要提供可选 run archive，把 retained window 内的终态 run 持久化下来，供重启后继续查询。
+- flow 需要提供可选 run archive backend，把 retained window 内的终态 run 持久化下来，供重启后继续查询；未配置 PG 时仍必须保持默认可运行。
   - 编辑器默认以表单化绑定提升易用性，而不是要求用户长期手写大段 JSON。
 - 在首批能力中新增 `compose` 节点，用于拼装 JSON 结果，作为后续调用节点的输入来源。
 - 在本轮局部变量扩展中新增 `set_var` 节点，用于写入单次 run 生效的命名局部变量。
@@ -124,10 +124,13 @@
 38. 当 `dedup_window_ms` 省略或为 `0` 时，执行器必须保持当前行为，不做额外 trigger 去重。
 39. 当 `dedup_window_ms>0` 时，执行器必须在内存中按“同一 flow + 同一规范化 trigger 上下文”做窗口去重；窗口内重复 trigger 不得生成新的 run。
 40. dedup 必须是显式 opt-in；执行器重启后 dedup 记忆可清空，不要求跨重启持久化。
-41. 当 `flow.run_archive_enabled=true` 时，执行器必须把 retained window 内的终态 run 摘要和节点结果持久化到本地 archive。
-42. run archive 仍复用 `flow.max_retained_runs` 作为 retained window 上限；超出窗口的更旧 archive 可以被清理。
-43. `status`、`detail`、`list_runs` 命中 retained window 内的 archived run 时，返回结果必须与内存 retained run 保持一致，即使执行器重启。
-44. 删除 flow 定义不应立即删除 retained archive；只要 archived run 仍在 retained window 内，`list_runs/status/detail` 仍可查询这些 run。
+41. `flow.run_archive.backend` 必须支持 `off | file | pg`；未设置时保持默认关闭语义。
+42. `flow.run_archive_enabled=true` 必须继续兼容，并等价于启用 `file` backend。
+43. 当 backend=`file` 时，执行器必须把 retained window 内的终态 run 摘要和节点结果持久化到本地 archive。
+44. 当 backend=`pg` 时，执行器必须把 retained window 内的终态 run 摘要和节点结果持久化到 PG；PG 必须是显式 opt-in，未配置 PG 时系统仍可正常运行。
+45. run archive 仍复用 `flow.max_retained_runs` 作为 retained window 上限；超出窗口的更旧 archive 可以被清理。
+46. `status`、`detail`、`list_runs` 命中 retained window 内的 archived run 时，返回结果必须与内存 retained run 保持一致，即使执行器重启。
+47. 删除 flow 定义不应立即删除 retained archive；只要 archived run 仍在 retained window 内，`list_runs/status/detail` 仍可查询这些 run。
 
 ## Non-functional Requirements
 

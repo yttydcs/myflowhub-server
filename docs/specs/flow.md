@@ -597,6 +597,7 @@ HeaderTcp 与路由约定
 ------------
 
 - 工作流定义持久化是可插拔的，运行期 `flow` handler 只依赖 `LoadAll/Save/Delete` 接口。
+- retained run archive 也是独立可插拔的，运行期 `flow` handler 只依赖 archive store 的 `LoadAll/Save/Delete` 接口。
 - 默认 backend：`json`
   - `flow.backend` 未配置或为空时，仍使用本地 JSON 文件。
   - 默认目录：`./flows`
@@ -609,16 +610,27 @@ HeaderTcp 与路由约定
   - `flow.backend`
   - `flow.base_dir`
   - `flow.max_retained_runs`
+  - `flow.run_archive.backend`
   - `flow.run_archive_enabled`
   - `state.pg.dsn`
   - `state.pg.flow_table`
+  - `state.pg.flow_run_archive_table`
 - 不在本轮持久化范围：
   - 活动 run 状态
   - scheduler
   - 运行中的 runtime context
-- `flow.run_archive_enabled=true` 时：
-  - retained window 内的终态 run 会以本地 JSON sidecar 形式归档到 `flow.base_dir/_runs/<flow_id>/<run_id>.json`
-  - 启动时执行器会从 archive 预热 retained run，供 `status/detail/list_runs` 继续查询
+- run archive backend：
+  - `flow.run_archive.backend` 未配置或为空时：
+    - 保持默认关闭；retained window 继续只有内存语义
+  - `flow.run_archive_enabled=true`：
+    - 作为 legacy 兼容入口，等价于 `flow.run_archive.backend=file`
+  - `flow.run_archive.backend=file`：
+    - retained window 内的终态 run 会以本地 JSON sidecar 形式归档到 `flow.base_dir/_runs/<flow_id>/<run_id>.json`
+  - `flow.run_archive.backend=pg`：
+    - 由 `Server` 注入 PG archive store
+    - `state.pg.dsn` 必填
+    - `state.pg.flow_run_archive_table` 可选，缺省表名由 `Server` 提供
+  - 启动时执行器会从 archive backend 预热 retained run，供 `status/detail/list_runs` 继续查询
   - archive 仅覆盖 retained window，不承诺窗口外长期历史
 - backend 已显式配置但不可用时，不静默降级到其他 backend。
 - backend 切换时不自动迁移已有 JSON / PG 数据。
@@ -628,7 +640,7 @@ HeaderTcp 与路由约定
 - 运行时可在内存中保留有限数量的历史 run 摘要
 - `list_runs` 查询的正是这部分 retained window，不承诺返回窗口外历史
 - 完整节点结果可在 retained window 内通过 `detail` 查询
-- `flow.run_archive_enabled=true` 时，这部分 retained window 会被持久化并在启动时重新加载
+- 启用 `file` 或 `pg` archive backend 时，这部分 retained window 会被持久化并在启动时重新加载
 - `flow.max_retained_runs` 同时约束 retained window 的内存与 archive 上限
 - 未开启 run archive 时，retained window 继续保持仅内存语义
 - flow 局部变量属于 `RunContext` 运行期状态，不参与定义持久化，也不承诺长期保留
