@@ -16,8 +16,13 @@ func newFlowHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (
 	if err != nil {
 		return nil, err
 	}
+	archiveStore, err := newFlowRunArchiveStore(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return flowhandler.NewHandlerWithOptions(cfg, flowhandler.HandlerOptions{
-		RuntimeDeps: deps,
-		Persistence: store,
+		RuntimeDeps:     deps,
+		Persistence:     store,
+		RunArchiveStore: archiveStore,
 	}, log), nil
 }

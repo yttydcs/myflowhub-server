@@ -15,18 +15,23 @@ import (
 )
 
 const (
-	cfgFlowBackend      = "flow.backend"
-	cfgVarStoreBackend  = "varstore.backend"
-	cfgStatePGDSN       = "state.pg.dsn"
-	cfgStatePGFlowTable = "state.pg.flow_table"
-	cfgStatePGVarTable  = "state.pg.varstore_table"
+	cfgFlowBackend                = "flow.backend"
+	cfgVarStoreBackend            = "varstore.backend"
+	cfgFlowRunArchiveBackend      = "flow.run_archive.backend"
+	cfgStatePGDSN                 = "state.pg.dsn"
+	cfgStatePGFlowTable           = "state.pg.flow_table"
+	cfgStatePGVarTable            = "state.pg.varstore_table"
+	cfgStatePGFlowRunArchiveTable = "state.pg.flow_run_archive_table"
 
 	backendJSON   = "json"
 	backendMemory = "memory"
 	backendPG     = "pg"
+	backendOff    = "off"
+	backendFile   = "file"
 
-	defaultFlowTable = "myflowhub_flow_definitions"
-	defaultVarTable  = "myflowhub_varstore_records"
+	defaultFlowTable           = "myflowhub_flow_definitions"
+	defaultVarTable            = "myflowhub_varstore_records"
+	defaultFlowRunArchiveTable = "myflowhub_flow_run_archives"
 )
 
 var pgIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -53,6 +58,17 @@ func newVarStorePersistence(cfg core.IConfig) (varstore.Persistence, error) {
 	}
 }
 
+func newFlowRunArchiveStore(cfg core.IConfig) (flowhandler.RunArchiveStore, error) {
+	switch flowRunArchiveBackendValue(cfg) {
+	case backendOff, backendFile:
+		return nil, nil
+	case backendPG:
+		return newPGFlowRunArchiveStore(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported %s", cfgFlowRunArchiveBackend)
+	}
+}
+
 func backendValue(cfg core.IConfig, key, def string) string {
 	val := strings.ToLower(strings.TrimSpace(def))
 	if cfg == nil {
@@ -64,6 +80,23 @@ func backendValue(cfg core.IConfig, key, def string) string {
 		}
 	}
 	return val
+}
+
+func flowRunArchiveBackendValue(cfg core.IConfig) string {
+	if cfg != nil {
+		if raw, ok := cfg.Get(cfgFlowRunArchiveBackend); ok {
+			if trimmed := strings.ToLower(strings.TrimSpace(raw)); trimmed != "" {
+				return trimmed
+			}
+		}
+		if raw, ok := cfg.Get("flow.run_archive_enabled"); ok {
+			switch strings.ToLower(strings.TrimSpace(raw)) {
+			case "1", "true", "yes", "on":
+				return backendFile
+			}
+		}
+	}
+	return backendOff
 }
 
 func requiredConfigValue(cfg core.IConfig, key string) (string, error) {
@@ -288,6 +321,109 @@ func (p *pgVarStorePersistence) Delete(ctx context.Context, owner uint32, name s
 			return err
 		}
 		_, err := conn.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE owner = $1 AND name = $2`, p.table), int64(owner), strings.TrimSpace(name))
+		return err
+	})
+}
+
+type pgFlowRunArchiveStore struct {
+	dsn   string
+	table string
+}
+
+func newPGFlowRunArchiveStore(cfg core.IConfig) (flowhandler.RunArchiveStore, error) {
+	dsn, err := requiredConfigValue(cfg, cfgStatePGDSN)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := pgx.ParseConfig(dsn); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", cfgStatePGDSN, err)
+	}
+	table, err := normalizedPGTableName(cfg, cfgStatePGFlowRunArchiveTable, defaultFlowRunArchiveTable)
+	if err != nil {
+		return nil, err
+	}
+	return &pgFlowRunArchiveStore{dsn: dsn, table: table}, nil
+}
+
+func (p *pgFlowRunArchiveStore) ensureSchema(ctx context.Context, conn *pgx.Conn) error {
+	query := fmt.Sprintf(`
+CREATE TABLE IF NOT EXISTS %s (
+	flow_id TEXT NOT NULL,
+	run_id TEXT NOT NULL,
+	record JSONB NOT NULL,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (flow_id, run_id)
+)`, p.table)
+	_, err := conn.Exec(ctx, query)
+	return err
+}
+
+func (p *pgFlowRunArchiveStore) LoadAll(ctx context.Context) ([]flowhandler.ArchivedRunRecord, error) {
+	var records []flowhandler.ArchivedRunRecord
+	err := withPGConn(ctx, p.dsn, func(ctx context.Context, conn *pgx.Conn) error {
+		if err := p.ensureSchema(ctx, conn); err != nil {
+			return err
+		}
+		rows, err := conn.Query(ctx, fmt.Sprintf(`
+SELECT flow_id, run_id, record
+FROM %s
+ORDER BY flow_id, run_id`, p.table))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var flowID string
+			var runID string
+			var raw []byte
+			if err := rows.Scan(&flowID, &runID, &raw); err != nil {
+				return err
+			}
+			var record flowhandler.ArchivedRunRecord
+			if err := json.Unmarshal(raw, &record); err != nil {
+				return err
+			}
+			if strings.TrimSpace(record.FlowID) == "" {
+				record.FlowID = flowID
+			}
+			if strings.TrimSpace(record.RunID) == "" {
+				record.RunID = runID
+			}
+			records = append(records, record)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (p *pgFlowRunArchiveStore) Save(ctx context.Context, record flowhandler.ArchivedRunRecord) error {
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	return withPGConn(ctx, p.dsn, func(ctx context.Context, conn *pgx.Conn) error {
+		if err := p.ensureSchema(ctx, conn); err != nil {
+			return err
+		}
+		_, err := conn.Exec(ctx, fmt.Sprintf(`
+INSERT INTO %s (flow_id, run_id, record, updated_at)
+VALUES ($1, $2, $3::jsonb, NOW())
+ON CONFLICT (flow_id, run_id) DO UPDATE
+SET record = EXCLUDED.record,
+	updated_at = NOW()`, p.table), strings.TrimSpace(record.FlowID), strings.TrimSpace(record.RunID), string(raw))
+		return err
+	})
+}
+
+func (p *pgFlowRunArchiveStore) Delete(ctx context.Context, flowID, runID string) error {
+	return withPGConn(ctx, p.dsn, func(ctx context.Context, conn *pgx.Conn) error {
+		if err := p.ensureSchema(ctx, conn); err != nil {
+			return err
+		}
+		_, err := conn.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE flow_id = $1 AND run_id = $2`, p.table), strings.TrimSpace(flowID), strings.TrimSpace(runID))
 		return err
 	})
 }
