@@ -10,7 +10,7 @@ import (
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
 )
 
-const defaultAuthRolePerms = "superadmin:*;admin:file.read,file.write,flow.set,flow.delete,exec.call,exec.cap.query,exec.cap.sync,var.private_set,var.revoke,var.subscribe,auth.revoke,auth.pending.list,auth.register.approve,auth.register.reject,auth.permit.issue,auth.permit.revoke;node:file.read,file.write,flow.set,exec.call,exec.cap.query,exec.cap.sync"
+const defaultAuthRolePerms = coreconfig.DefaultAuthRolePerms
 
 // Options defines a reusable HubServer runtime configuration.
 //
@@ -128,8 +128,7 @@ func DefaultOptions() Options {
 		AuthDefaultRole:  "node",
 		AuthDefaultPerms: "",
 		AuthNodeRoles:    "",
-		// Keep Server-side auth role defaults stable even when older Core releases
-		// do not export or inject the same default mapping.
+		// Server runtime follows the Core exported default role mapping to avoid drift.
 		AuthRolePerms: defaultAuthRolePerms,
 
 		WorkDir:            "",

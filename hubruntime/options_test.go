@@ -1,6 +1,7 @@
 package hubruntime
 
 import (
+	"strings"
 	"testing"
 
 	coreconfig "github.com/yttydcs/myflowhub-core/config"
@@ -22,5 +23,10 @@ func TestDefaultOptions_AuthRoleHierarchyDefaults(t *testing.T) {
 	cfg := configDataFromOptions(opts)
 	if cfg[coreconfig.KeyAuthRolePerms] != defaultAuthRolePerms {
 		t.Fatalf("unexpected transport auth role perms: got %q want %q", cfg[coreconfig.KeyAuthRolePerms], defaultAuthRolePerms)
+	}
+	for _, perm := range []string{"flow.run", "flow.read"} {
+		if !strings.Contains(opts.AuthRolePerms, perm) {
+			t.Fatalf("auth role perms should include %q: %q", perm, opts.AuthRolePerms)
+		}
 	}
 }
