@@ -3,6 +3,7 @@ package hubruntime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/header"
+	"github.com/yttydcs/myflowhub-core/listener/tcp_listener"
 )
 
 func TestSendRegisterOnConnIncludesDisplayNameAndJoinPermit(t *testing.T) {
@@ -81,6 +83,88 @@ func TestTrimmedConfigValue(t *testing.T) {
 	}
 	if got := trimmedConfigValue(cfg, "missing"); got != "" {
 		t.Fatalf("unexpected missing value: got %q want empty", got)
+	}
+}
+
+func TestSelfRegisterNodeIDUsesInjectedDialerForGenericTarget(t *testing.T) {
+	client, server := net.Pipe()
+	defer server.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		defer server.Close()
+
+		codec := header.HeaderTcpCodec{}
+		reqHdr, reqBody, err := codec.Decode(server)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		var msg registerPayload
+		if err := json.Unmarshal(reqBody, &msg); err != nil {
+			errCh <- err
+			return
+		}
+		if got := msg.Action; got != "register" {
+			errCh <- fmt.Errorf("unexpected action: got %q want %q", got, "register")
+			return
+		}
+		if got := msg.Data["device_id"]; got != "hub-quic" {
+			errCh <- fmt.Errorf("unexpected device_id: got %v want %q", got, "hub-quic")
+			return
+		}
+
+		respPayload, err := json.Marshal(map[string]any{
+			"action": "register_resp",
+			"data": map[string]any{
+				"code":    1,
+				"status":  "approved",
+				"node_id": 12,
+			},
+		})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respHdr := (&header.HeaderTcp{}).
+			WithMajor(header.MajorCmd).
+			WithSubProto(2).
+			WithTargetID(reqHdr.SourceID()).
+			WithMsgID(reqHdr.GetMsgID())
+		frame, err := codec.Encode(respHdr, respPayload)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		_, err = server.Write(frame)
+		errCh <- err
+	}()
+
+	const target = "quic://parent.example:9000?insecure=true"
+	var gotTarget string
+	nodeID, err := selfRegisterNodeID(
+		context.Background(),
+		target,
+		"hub-quic",
+		"",
+		func(_ context.Context, actualTarget string) (core.IConnection, error) {
+			gotTarget = actualTarget
+			return tcp_listener.NewTCPConnection(client), nil
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("selfRegisterNodeID: %v", err)
+	}
+	if gotTarget != target {
+		t.Fatalf("unexpected dial target: got %q want %q", gotTarget, target)
+	}
+	if nodeID != 12 {
+		t.Fatalf("unexpected node id: got %d want %d", nodeID, 12)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("bootstrap server: %v", err)
 	}
 }
 

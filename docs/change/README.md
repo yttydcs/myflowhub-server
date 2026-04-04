@@ -12,6 +12,7 @@
 - 结果归档记录必须显式说明验证方式与回滚方案。
 
 ## Current Entries
+- [2026-04-04_hubruntime-bootstrap-endpoint-dialer.md](2026-04-04_hubruntime-bootstrap-endpoint-dialer.md)
 - [2026-04-02_server-flow-run-archive-backend-contract.md](2026-04-02_server-flow-run-archive-backend-contract.md)
 - [2026-04-02_server-flow-run-archive-contract.md](2026-04-02_server-flow-run-archive-contract.md)
 - [2026-04-02_server-flow-trigger-dedup-contract.md](2026-04-02_server-flow-trigger-dedup-contract.md)
