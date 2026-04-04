@@ -12,6 +12,7 @@
 - `*-prev.md` 表示覆盖前快照，不等同于独立 workflow。
 
 ## Current Entries
+- [plan_archive_2026-04-04_hubruntime-bootstrap-endpoint-dialer.md](plan_archive_2026-04-04_hubruntime-bootstrap-endpoint-dialer.md)
 - [plan_archive_2026-03-29_stream-mainline-merge.md](plan_archive_2026-03-29_stream-mainline-merge.md)
 - [plan_archive_2026-03-22_server-docs-governance.md](plan_archive_2026-03-22_server-docs-governance.md)
 - [plan_archive_2026-03-12_bump-core-v0.3.0-server-prev.md](plan_archive_2026-03-12_bump-core-v0.3.0-server-prev.md)

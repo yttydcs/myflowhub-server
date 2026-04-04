@@ -126,27 +126,16 @@ func (r *Runtime) Start(ctx context.Context) error {
 	parentTarget := effectiveParentTarget(opts)
 
 	// Pre-start: if parent enabled and self id provided, self-register to obtain/confirm node id.
-	parentScheme := ""
-	parentTCPAddr := ""
 	if opts.ParentEnable && parentTarget != "" {
-		scheme, tcpAddr, err := parseParentEndpoint(parentTarget)
+		_, _, err := parseParentEndpoint(parentTarget)
 		if err != nil {
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
 			return err
 		}
-		parentScheme = scheme
-		parentTCPAddr = tcpAddr
 	}
 	if opts.ParentEnable && parentTarget != "" && opts.SelfID != "" {
-		// Current bootstrap (SelfRegister) is TCP-only; keep behavior explicit.
-		if parentScheme != "tcp" {
-			err := fmt.Errorf("self-id bootstrap only supports tcp parent endpoint (got %s)", parentScheme)
-			_ = r.restoreWorkDir()
-			r.storeErr(err)
-			return err
-		}
-		nodeID, err := selfRegisterNodeID(ctx, parentTCPAddr, opts.SelfID, opts.ParentJoinPermit, log)
+		nodeID, err := selfRegisterNodeID(ctx, parentTarget, opts.SelfID, opts.ParentJoinPermit, dialParentEndpoint, log)
 		if err != nil {
 			_ = r.restoreWorkDir()
 			r.storeErr(err)
@@ -463,12 +452,23 @@ func ensureConnNodeIDNonZero(conn core.IConnection, fallback uint32) (ensured bo
 	return true
 }
 
-func selfRegisterNodeID(ctx context.Context, parentAddr, selfID, joinPermit string, log *slog.Logger) (uint32, error) {
+func selfRegisterNodeID(
+	ctx context.Context,
+	parentTarget, selfID, joinPermit string,
+	dialer func(context.Context, string) (core.IConnection, error),
+	log *slog.Logger,
+) (uint32, error) {
 	// Use a short timeout to avoid blocking embedded runtimes on flaky networks.
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	nodeID, _, err := bootstrap.SelfRegister(cctx, bootstrap.SelfRegisterOptions{
-		ParentAddr: parentAddr,
+		ParentAddr: parentTarget,
+		Dial: func(ctx context.Context) (core.IConnection, error) {
+			if dialer == nil {
+				return nil, errors.New("parent dialer required")
+			}
+			return dialer(ctx, parentTarget)
+		},
 		SelfID:     selfID,
 		JoinPermit: joinPermit,
 		Timeout:    8 * time.Second,
