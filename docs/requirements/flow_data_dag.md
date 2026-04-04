@@ -16,6 +16,14 @@
   - 该差异尚未形成可声明、可审计的稳定契约
 - 当前 `event/var_changed` 触发器一旦匹配就会立即尝试启动；若上游重复投递同一事件，或短时间内反复发出同一变量变更通知，运行时缺少显式去重窗口来抑制重复 run。
 - 当前 retained run 虽已支持可选本地 archive，但后端仍固定为本地 JSON sidecar；在需要更强持久化或集中化存储时，仍缺少显式 run archive backend。
+- 当前 `flow` 仍缺少真正的高阶编排能力：
+  - 不能按条件选择分支路径
+  - 不能对数组输入做显式 foreach
+  - 不能在一个 flow 内同步复用另一个 flow
+  - 只能按固定毫秒间隔触发，不能按日历时间调度
+- 当前 `flow` 仍缺少正式的纯计算节点：
+  - 不能在图内直接完成数值 / 布尔 / 字符串 / object / array 变换
+  - 简单计算仍要依赖外部 capability 或调用方预处理
 
 ## Goal
 
@@ -23,6 +31,7 @@
   - 节点可产生结构化结果。
   - 后续节点可显式消费上游节点结果。
   - flow 可在单次 run 内维护显式的局部变量，供后续节点按名称读取，而不是退回跨 run 的 `varstore`。
+  - flow 需要补齐一个纯计算 `transform` 节点，用于在图内完成结构化表达式运算并产出结果。
   - flow 需要补齐基础 run control，支持显式取消指定 run，而不删除工作流定义。
   - flow 需要补齐基础观测面，支持按 `flow_id` 查看保留窗口内的 run 历史摘要。
   - flow 需要把运行控制权限与只读观测权限显式收口，避免继续裸露在无权限动作集合中。
@@ -32,7 +41,13 @@
 - flow 需要提供可选 run archive backend，把 retained window 内的终态 run 持久化下来，供重启后继续查询；未配置 PG 时仍必须保持默认可运行。
   - 编辑器默认以表单化绑定提升易用性，而不是要求用户长期手写大段 JSON。
 - 在首批能力中新增 `compose` 节点，用于拼装 JSON 结果，作为后续调用节点的输入来源。
+- 在本轮表达式扩展中新增 `transform` 节点，用于在无脚本前提下完成显式、可审计的运算。
 - 在本轮局部变量扩展中新增 `set_var` 节点，用于写入单次 run 生效的命名局部变量。
+- 在本轮高阶编排扩展中新增：
+  - `branch` 节点，用于按显式规则选择后续路径
+  - `foreach` 节点，用于串行遍历数组并汇总结果
+  - `subflow` 节点，用于同步调用同执行器内的另一个 flow
+  - `trigger.type=cron`，用于按标准 5-field cron 表达式调度
 
 ## Scope
 
@@ -41,6 +56,9 @@
 - `call` 节点执行后必须产生可被后续节点引用的结果。
 - 下游节点必须支持显式输入绑定，而不是隐式共享全局变量。
 - 首批新增 `compose` 节点，用于将上游结果、触发信息和运行元数据组装为 JSON 结果。
+- 必须支持 `transform` 节点，用于执行结构化、白名单式表达式树运算，并把结果暴露给后续节点。
+- `transform` 表达式必须至少支持 `literal`、`source`、`object`、`array`、`op + args` 五种变体。
+- `transform` 不得引入任意脚本执行、自由表达式字符串求值或用户自定义函数。
 - 新增 `set_var` 节点，用于将模板和绑定物化后的值写入单次 run 的局部变量空间。
 - 新增 `cancel_run` 动作，用于取消指定 `flow_id + run_id` 的活动 run。
 - 新增 `list_runs` 动作，用于查询指定 `flow_id` 当前保留窗口内的 run 摘要。
@@ -54,6 +72,10 @@
 - 编辑器必须提供默认表单化输入绑定模式，并保留高级 JSON 模式作为补充。
 - 数据依赖必须与 DAG 保持一致，只允许引用祖先节点结果。
 - flow 局部变量必须与 `varstore` 语义明确区分：只在单次 run 内有效，不跨 run 持久化，不参与网络同步。
+- 必须支持 `branch` 节点，且第一版只允许显式规则匹配，不支持脚本表达式。
+- 必须支持 `foreach` 节点，且第一版按输入顺序串行执行 body graph。
+- 必须支持 `subflow` 节点，且第一版仅允许同步调用同执行器内的 flow。
+- 必须支持 `cron` trigger，且第一版不要求时区字段。
 
 ### Optional
 
@@ -61,10 +83,12 @@
 
 ### Not In Scope
 
-- 条件分支节点。
-- 循环 / foreach 节点。
 - 任意脚本执行节点。
-- 大幅改写现有 `flow` 的调度动作集；本轮仅在既有 `set/delete/run/status/detail/list/get` 基础上新增 `cancel_run`。
+- 任意表达式字符串求值。
+- `foreach` 并行 fan-out / fan-in。
+- cross-executor `subflow`。
+- `subflow` 异步 fire-and-forget 模式。
+- `cron` 时区字段与重启补跑。
 - 将 flow 局部变量自动映射到 `varstore`，或让它承担跨 run / 跨节点持久化语义。
 
 ## Scenarios
@@ -74,6 +98,11 @@
 3. 多个上游节点分别返回部分结果，由 `compose` 节点汇总为一个统一 JSON，再交给后续 `call` 节点。
 4. 节点 A 计算出一个中间 JSON，`set_var` 将其写入 `session_payload`，节点 B 和节点 C 都通过局部变量读取它的不同字段，而不需要额外落到 `varstore`。
 5. 用户在编辑器中选中某个已运行节点，按 `flow_id/run_id/node_id` 查看该节点结果，必要时只读取结果中的某个子路径，而不是把整个 run 大对象塞回 `status`。
+6. 节点 A 根据订单状态走 `approved` 或 `rejected` 分支，只执行被选中的后续路径。
+7. `foreach` 读取设备数组，逐项调用远端能力并汇总结果数组。
+8. 主 flow 在完成前置准备后，通过 `subflow` 同步调用另一个通知 flow，并读取其结果节点作为当前节点输出。
+9. 运维希望在每天工作日早上 9 点触发一个 flow，而不是按固定 `every_ms` 轮询。
+10. 节点 A 调用 `varstore::get` 读取一个计数值后，`transform` 将该值 `+1`，再交给后续 `set_var` 或 `call` 节点继续消费。
 
 ## Functional Requirements
 
@@ -131,6 +160,27 @@
 45. run archive 仍复用 `flow.max_retained_runs` 作为 retained window 上限；超出窗口的更旧 archive 可以被清理。
 46. `status`、`detail`、`list_runs` 命中 retained window 内的 archived run 时，返回结果必须与内存 retained run 保持一致，即使执行器重启。
 47. 删除 flow 定义不应立即删除 retained archive；只要 archived run 仍在 retained window 内，`list_runs/status/detail` 仍可查询这些 run。
+48. `branch` 节点必须按声明顺序匹配 case，命中首个匹配项后只激活该 case 对应的后续路径。
+49. `branch` 节点未命中任何 case 时，若配置了 `default_case` 则走默认路径；否则节点失败。
+50. `branch` 的路由必须通过图中显式标记的 edge case 完成，未选中的路径节点状态必须可观察。
+51. `foreach` 节点必须从显式数组来源读取 items；来源缺失或不是数组时必须明确失败。
+52. `foreach` 必须为每次迭代提供至少 `loop_item` 和 `loop_index` 两类可绑定来源。
+53. `foreach` body graph 的每次迭代必须使用隔离的局部上下文，迭代内 `set_var` 不得污染外层 flow 的局部变量空间。
+54. `foreach` 节点必须按输入顺序收集每次迭代的 `result_node_id` 结果，形成结果数组。
+55. `subflow` 节点必须同步执行目标 flow，等待目标 flow 终态后再继续当前 flow。
+56. `subflow` 节点第一版只允许调用同一执行器内已存在的 flow 定义。
+57. `subflow` 节点必须禁止直接自调用和递归调用链。
+58. `subflow` 节点必须支持为子 flow 构造结构化输入，并通过子 flow 的 `result_node_id` 读取结果。
+59. `cron` trigger 必须支持标准 5-field cron 表达式，并按执行器本地时区计算下一次触发时间。
+60. `cron` trigger 第一版不要求时区字段，执行器重启后也不补跑错过的窗口。
+61. `transform` 节点必须只产生结果，不直接产生外部副作用。
+62. `transform` 节点必须支持显式表达式树，且单个表达式节点只能选择 `literal/source/object/array/op` 其中一种变体。
+63. `transform.source` 必须复用现有绑定来源模型，至少支持 `node_result`、`trigger`、`flow_meta`、`run_meta`、`flow_var`、`loop_item`、`loop_index`。
+64. `transform.source` 必须支持可选 `required`；默认 `true`，显式 `false` 时来源缺失返回 `null`，以便与 `coalesce/if` 配合。
+65. `transform` 第一版至少支持以下白名单运算：`add/sub/mul/div/mod/neg/abs/min/max`、`eq/ne/gt/gte/lt/lte`、`and/or/not/coalesce/if`、`concat/lower/upper/trim`、`len`。
+66. `transform` 必须在保存前拒绝未知 op、错误参数个数、非法 source、越界的 `loop_item/loop_index` 引用和多变体混用。
+67. `transform` 运行时遇到类型不匹配、除零、必填来源缺失时，必须让当前节点明确失败，不能静默做隐式转换。
+68. `transform` 必须可在 `foreach.body` 内使用，并允许显式消费 `loop_item` 和 `loop_index`。
 
 ## Non-functional Requirements
 
@@ -141,7 +191,7 @@
 - 性能：
   - 避免对大型 JSON 进行无意义的重复序列化、反序列化和深拷贝。
 - 可扩展性：
-  - 后续新增 `branch / foreach / set_var` 等节点时，应复用同一套运行上下文与绑定模型。
+  - `branch / foreach / subflow / set_var` 等节点应尽量复用同一套运行上下文与绑定模型。
 - 边界清晰：
   - `flow` 局部变量只解决单次 run 内的局部中间态，不与 `varstore` 的跨 run、跨节点、持久化语义混淆。
 - 安全性：
@@ -165,6 +215,13 @@
 - `max_active_runs=0` 与字段未设置的语义不同，必须显式区分。
 - 同一 `event` payload 在短窗口内被重复投递。
 - 同一变量在极短时间内连续触发相同 `changed/deleted` 通知。
+- branch case 与 edge case 不一致。
+- branch 未命中任何 case 且没有 `default_case`。
+- `foreach` source 为空、不是数组、数组元素是复杂对象。
+- `foreach` body graph 合法，但 `result_node_id` 不存在。
+- `subflow` 指向不存在的 flow、指向自身或形成递归链。
+- `subflow` 子 flow 失败，或指定 `result_node_id` 不存在。
+- `cron` 表达式非法，或在跨月/跨周边界计算下一次时间。
 
 ## Acceptance Criteria
 
@@ -185,6 +242,14 @@
 15. `dedup_window_ms` 未设置或为 `0` 时，trigger 行为保持现状；窗口外的同类 trigger 或不同规范化 trigger 仍可正常启动。
 16. 开启 run archive 后，执行器重启后仍可对 retained window 内的 run 使用 `status/detail/list_runs`。
 17. 删除 flow 定义后，只要 archived run 仍在 retained window 内，`list_runs/status/detail` 仍可继续查询。
+18. `branch` 节点命中某个 case 后，未选中的路径节点会被标记为 `skipped`，merge 后的公共节点仍可继续执行。
+19. `foreach` 节点对一个三元素数组执行 body graph 后，会得到三个结果组成的数组，且顺序与输入一致。
+20. `subflow` 节点可以同步执行另一个 flow，并返回指定结果节点数据；若目标 flow 失败，当前节点也会明确失败。
+21. `cron` trigger 配置工作日早 9 点表达式后，会在执行器本地时间命中该窗口；未配置时区字段仍语义明确。
+22. `transform(add)` 可以直接实现“读取上游结果中的数字并加一”。
+23. `transform` 可以在同一个节点中构造嵌套 object / array 结果，并在 `foreach.body` 内消费 `loop_item/loop_index`。
+24. `transform(coalesce)` 可以把 `required=false` 的可选来源与 fallback 值组合起来，来源缺失时仍返回明确结果。
+25. `transform` 的未知 op、错误参数个数、非法 source 会在保存前被拒绝；类型不匹配和除零会在运行时明确失败。
 
 ## Related Specs
 

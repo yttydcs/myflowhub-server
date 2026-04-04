@@ -13,7 +13,11 @@ flow 协议（SubProto=6）规范
 - 第一版数据流增强后的正式节点类型为：
   - `call`
   - `compose`
+  - `transform`
   - `set_var`
+  - `branch`
+  - `foreach`
+  - `subflow`
 - `exec`（SubProto=7）继续负责远程方法调用与权限裁决；`flow` 不复制 `exec.call` 的路由与权限模型。
 
 总览
@@ -30,7 +34,7 @@ flow 协议（SubProto=6）规范
   - `list_runs`：列出指定 flow 当前保留窗口内的运行摘要（需要权限 `flow.read`）
   - `list`：列出执行者当前已知的工作流摘要（需要权限 `flow.read`）
   - `get`：读取指定工作流定义（需要权限 `flow.read`）
-- 触发器（当前）：支持 `interval` / `event` / `var_changed`
+- 触发器（当前）：支持 `interval` / `cron` / `event` / `var_changed`
   - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动
   - `var_changed`：由 `varstore.changed` / `varstore.deleted` 事件驱动
 
@@ -349,13 +353,19 @@ HeaderTcp 与路由约定
 
 `trigger`：
 
-- `type`：`interval` | `event` | `var_changed`
+- `type`：`interval` | `cron` | `event` | `var_changed`
 - 共享字段：
   - `dedup_window_ms`：int（可选，默认 `0`）
     - `0` / 省略表示关闭 trigger dedup
     - 仅 `event` / `var_changed` 支持 `>0`
 - `interval`
   - `every_ms`：uint64，必填，`>0`
+  - `dedup_window_ms` 仅允许省略或 `0`
+- `cron`
+  - `cron`：string，必填，标准 5-field 表达式（minute hour day-of-month month day-of-week）
+  - 使用执行器本地时区解释
+  - 第一版不支持时区字段
+  - 第一版执行器重启后不补跑错过的窗口
   - `dedup_window_ms` 仅允许省略或 `0`
 - `event`
   - `event_mode`：`publish` | `received` | `any`
@@ -375,7 +385,7 @@ HeaderTcp 与路由约定
 
 - `id`：string（必填，图内唯一）
 - `kind`：string（必填）
-  - 新写入契约：`"call"` | `"compose"` | `"set_var"`
+  - 新写入契约：`"call"` | `"compose"` | `"transform"` | `"set_var"` | `"branch"` | `"foreach"` | `"subflow"`
 - `allow_fail`：bool（可选，默认 `false`）
 - `retry`：int（可选，默认 `1`）
 - `retry_backoff_ms`：int（可选，默认 `0`）
@@ -386,6 +396,9 @@ HeaderTcp 与路由约定
 
 - `from`：string（必填）
 - `to`：string（必填）
+- `case`：string（可选）
+  - 仅允许出现在 `branch` 节点的出边上
+  - 表示该边属于哪个 branch case 路由
 
 写入契约与兼容边界：
 
@@ -420,10 +433,14 @@ HeaderTcp 与路由约定
 
 - `interval`
   - 至少包含触发时间
+- `cron`
+  - 至少包含触发时间和命中的 cron 表达式
 - `event`
   - 至少包含 `mode`、`topic`、`name`、`payload`
 - `var_changed`
   - 至少包含 `owner`、`name`、`op`
+- `subflow`（运行期内部 trigger）
+  - 至少包含 `parent_flow_id`、`parent_run_id`、`node_id`、`input`
 
 节点可以通过输入绑定显式消费这些 trigger 字段。
 
@@ -452,6 +469,11 @@ HeaderTcp 与路由约定
 - `flow_var`
   - `name`：局部变量名（必填）
   - `path`：可选 JSON Pointer，默认根变量值
+- `loop_item`
+  - 仅允许在 `foreach.body` 内使用
+  - `path`：可选 JSON Pointer，默认当前迭代元素根值
+- `loop_index`
+  - 仅允许在 `foreach.body` 内使用
 
 局部变量读取约束：
 
@@ -466,6 +488,53 @@ HeaderTcp 与路由约定
 - `required=true` 且来源不存在时，当前节点必须失败
 - `flow_var` 仅允许引用可唯一解析到祖先 `set_var` 写入者的变量名
 - 同一路径上后续 `set_var` 可覆盖更早的同名值；若当前节点的祖先子图中存在多个不可唯一判定先后的同名写入者，则 `set` 阶段必须判定为歧义并拒绝保存
+- `loop_item` / `loop_index` 只在 `foreach.body` 内可见；外层节点禁止直接引用
+
+Transform 表达式模型
+--------------------
+
+`kind=transform` 采用结构化表达式树，不支持自由表达式字符串或脚本执行。
+
+`TransformExpr` 单个节点必须且只能命中以下一种变体：
+
+- `literal`
+  - 任意合法 JSON 值
+- `source`
+  - 复用 `InputBinding.source` 结构
+  - `required`：bool（可选，默认 `true`）
+    - 这是 `source` 所在表达式节点的同级字段，不是 `source` 对象内部字段
+    - `required=false` 时，来源缺失返回 `null`
+- `op + args`
+  - `op`：白名单运算名
+  - `args`：`TransformExpr[]`
+- `object`
+  - `map[string]TransformExpr`
+- `array`
+  - `TransformExpr[]`
+
+第一版白名单运算：
+
+- arithmetic
+  - `add` / `sub` / `mul` / `div` / `mod` / `neg` / `abs` / `min` / `max`
+- compare
+  - `eq` / `ne` / `gt` / `gte` / `lt` / `lte`
+- boolean/control
+  - `and` / `or` / `not` / `coalesce` / `if`
+- string
+  - `concat` / `lower` / `upper` / `trim`
+- collection
+  - `len`
+
+语义约束：
+
+- `transform` 是纯计算节点，只产出结果，不直接写 `varstore` 或其他外部状态
+- `eq/ne` 按规范化 JSON 值比较
+- `gt/gte/lt/lte` 只接受数值
+- `and/or/not/if` 只接受布尔值
+- `concat` 会把参数转为字符串后拼接；`lower/upper/trim` 只接受字符串
+- `len` 只接受字符串、数组或对象
+- `div/mod` 遇到除零必须失败
+- 不做隐式数字脚本化求值或用户自定义函数扩展
 
 节点类型：call
 --------------
@@ -514,6 +583,22 @@ HeaderTcp 与路由约定
 3. 得到最终结果并写入 `RunContext.nodes[<id>].result`
 4. `compose` 节点不发起远程调用，也不依赖 `exec.call`
 
+节点类型：transform
+-------------------
+
+`kind=transform` 的正式写入 spec：
+
+- `expr`：`TransformExpr`（必填）
+- `_ui`：编辑器布局元数据（可选）
+
+执行语义：
+
+1. 递归求值 `expr`
+2. `source` 叶子复用现有绑定来源读取逻辑
+3. 缺失来源且 `required=false` 时返回 `null`
+4. 求值成功后，把结果写入 `RunContext.nodes[<id>].result`
+5. `transform` 不直接发起远程调用，也不直接写入局部变量；若要持久化中间值，应继续配合 `set_var`
+
 节点类型：set_var
 -----------------
 
@@ -532,13 +617,80 @@ HeaderTcp 与路由约定
 4. 同时把该值写入 `RunContext.nodes[<id>].result`
 5. 当前 run 内，下游节点可通过 `source.kind=flow_var` 读取该值
 
+节点类型：branch
+----------------
+
+`kind=branch` 的正式写入 spec：
+
+- `cases`：array（必填，按顺序匹配）
+  - `name`：string（必填，图内对该 branch 节点唯一）
+  - `match.source`：`InputBinding.source` 兼容结构
+  - `match.op`：`eq` | `ne` | `gt` | `gte` | `lt` | `lte` | `exists`
+  - `match.value`：合法 JSON 值（`exists` 时可省略）
+- `default_case`：string（可选）
+- `_ui`：编辑器布局元数据（可选）
+
+执行语义：
+
+1. 按 `cases` 顺序读取 `match.source`
+2. 首个命中的 case 成为本节点选中分支
+3. 若未命中且声明了 `default_case`，则选择默认分支
+4. 若未命中且未声明 `default_case`，则节点失败
+5. 本节点结果至少包含选中的 `case`
+6. 仅与该 `case` 对应的 `edge.case` 出边被视为激活；其他 branch 出边对应的后续节点标记为 `skipped`
+
+节点类型：foreach
+-----------------
+
+`kind=foreach` 的正式写入 spec：
+
+- `source`：`InputBinding.source` 兼容结构（必填，必须解析到数组）
+- `required`：bool（可选，默认 `true`）
+- `body`：`Graph`（必填）
+- `result_node_id`：string（必填，表示每次迭代要收集的 body 节点结果）
+- `_ui`：编辑器布局元数据（可选）
+
+执行语义：
+
+1. 读取 `source` 并要求结果为数组
+2. 按输入顺序逐项执行 `body`
+3. 每次迭代都构造隔离的 child run context
+4. child run context 至少暴露 `loop_item` 与 `loop_index`
+5. 每次迭代从 `result_node_id` 读取结果，按顺序汇总为数组
+6. 迭代内局部变量不回写外层 flow
+7. 本节点结果为收集后的结果数组
+
+节点类型：subflow
+-----------------
+
+`kind=subflow` 的正式写入 spec：
+
+- `flow_id`：UUID（必填）
+- `input_template`：object（可选，默认 `{}`）
+- `inputs`：`InputBinding[]`（可选）
+- `result_node_id`：string（可选）
+- `_ui`：编辑器布局元数据（可选）
+
+执行语义：
+
+1. 以 `input_template + inputs` 物化子 flow 输入
+2. 在当前执行器内查找目标 flow
+3. 以运行期 `trigger.type=subflow` 同步执行目标 flow
+4. 禁止直接自调用和递归调用链
+5. 若声明 `result_node_id`，则从子 flow 的该节点读取结果
+6. 本节点结果至少包含子 flow 的 `flow_id`、`run_id`、`status`，以及可选 `result`
+
 执行语义
 --------
 
 - 对 `graph` 做拓扑排序；按顺序逐个执行 `nodes`
 - 每个节点执行前，先完成输入物化
 - 每个节点执行后，把状态和结果写入 `RunContext`
+- `transform` 通过表达式树做纯计算，结果同样进入 `RunContext.nodes`
 - `set_var` 额外更新 `RunContext.vars` 中对应变量的当前值和写入者
+- `branch` 会激活一个分支 case，并把未选中的后续路径节点标记为 `skipped`
+- `foreach` 会在隔离的 child context 中重复执行 body graph，并汇总结果数组
+- `subflow` 会在当前执行器内同步执行目标 flow，不产生顶层 retained run 记录
 - `allow_fail=false`
   - 当前节点失败后立即结束整个 run
 - `allow_fail=true`
@@ -565,6 +717,11 @@ HeaderTcp 与路由约定
   - `>0` 表示执行器按“同一 flow + 同一规范化 trigger 上下文”在内存中做窗口去重
   - dedup 命中时跳过本次 trigger 启动，不生成新 run
   - dedup 状态不要求持久化；执行器重启后可清空
+- `cron`
+  - 执行器在每次触发后重新计算下一次命中时间
+  - 第一版不支持 catch-up，不为停机期间错过的窗口补跑
+- 节点状态允许出现 `skipped`
+  - 表示该节点因 branch 路由未激活而未执行
 
 失败类型建议：
 
@@ -583,15 +740,21 @@ HeaderTcp 与路由约定
 - 节点 ID 唯一
 - 边引用的节点存在
 - 图无环
-- `call` / `compose` / `set_var` 的 spec 字段完整
+- `call` / `compose` / `transform` / `set_var` / `branch` / `foreach` / `subflow` 的 spec 字段完整
 - `max_active_runs >= 0`
 - `retry_backoff_ms >= 0`
 - `trigger.dedup_window_ms >= 0`
 - `interval` trigger 不支持 `dedup_window_ms > 0`
+- `cron` trigger 必须提供合法 5-field 表达式，且不支持 `dedup_window_ms > 0`
 - `inputs` 中引用的 `node_id` 存在
 - `inputs` 中引用的 `node_id` 是当前节点祖先
 - `flow_var.name` 合法，且可唯一解析到祖先 `set_var` 写入者
 - `to` / `source.path` 是合法 JSON Pointer
+- `transform` 表达式树必须只命中单一变体，且 op / arity / source / loop 可见性合法
+- `branch` 出边的 `edge.case` 必须与声明的 case / default_case 一致
+- 非 `branch` 节点的出边不得声明 `edge.case`
+- `foreach.body` 必须是合法 DAG，且 `result_node_id` 必须存在于 body graph 中
+- `subflow.flow_id` 必须合法，且不得等于当前 flow_id
 
 持久化与配置
 ------------
