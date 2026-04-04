@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/yttydcs/myflowhub-core/config"
+	flowproto "github.com/yttydcs/myflowhub-proto/protocol/flow"
 )
 
 func TestDefaultHubRejectsUnsupportedFlowBackend(t *testing.T) {
@@ -97,4 +98,42 @@ func TestPGVarStorePersistenceLoadAllReturnsConnectionError(t *testing.T) {
 	if _, err := store.LoadAll(context.Background()); err == nil {
 		t.Fatalf("expected pg connection error")
 	}
+}
+
+func TestDefaultHubWithPGFlowBackendIncludesFlowHandler(t *testing.T) {
+	cfg := config.NewMap(map[string]string{
+		cfgFlowBackend:      backendPG,
+		cfgStatePGDSN:       "postgres://postgres:postgres@127.0.0.1:5432/myflowhub?sslmode=disable",
+		cfgStatePGFlowTable: "myflowhub_flow_definitions",
+	})
+
+	handlers, _, err := DefaultHub(cfg, nil)
+	if err != nil {
+		t.Fatalf("DefaultHub() err=%v", err)
+	}
+	for _, h := range handlers {
+		if h != nil && h.SubProto() == flowproto.SubProtoFlow {
+			return
+		}
+	}
+	t.Fatalf("DefaultHub() missing flow handler for subproto=%d", flowproto.SubProtoFlow)
+}
+
+func TestDefaultHubWithPGFlowRunArchiveBackendIncludesFlowHandler(t *testing.T) {
+	cfg := config.NewMap(map[string]string{
+		cfgFlowRunArchiveBackend:      backendPG,
+		cfgStatePGDSN:                 "postgres://postgres:postgres@127.0.0.1:5432/myflowhub?sslmode=disable",
+		cfgStatePGFlowRunArchiveTable: "myflowhub_flow_run_archives",
+	})
+
+	handlers, _, err := DefaultHub(cfg, nil)
+	if err != nil {
+		t.Fatalf("DefaultHub() err=%v", err)
+	}
+	for _, h := range handlers {
+		if h != nil && h.SubProto() == flowproto.SubProtoFlow {
+			return
+		}
+	}
+	t.Fatalf("DefaultHub() missing flow handler for subproto=%d", flowproto.SubProtoFlow)
 }

@@ -7,6 +7,7 @@ import (
 	core "github.com/yttydcs/myflowhub-core"
 	"github.com/yttydcs/myflowhub-core/config"
 	"github.com/yttydcs/myflowhub-core/eventbus"
+	flowproto "github.com/yttydcs/myflowhub-proto/protocol/flow"
 	streamproto "github.com/yttydcs/myflowhub-server/protocol/stream"
 )
 
@@ -86,6 +87,20 @@ func TestDefaultHub_ContainsStream(t *testing.T) {
 		}
 	}
 	t.Fatalf("DefaultHub() missing stream subproto=%d", streamproto.SubProtoStream)
+}
+
+func TestDefaultHub_ContainsFlow(t *testing.T) {
+	cfg := config.NewMap(map[string]string{})
+	set, err := DefaultHub(cfg, nil)
+	if err != nil {
+		t.Fatalf("DefaultHub() err: %v", err)
+	}
+	for _, h := range set.Handlers {
+		if h != nil && h.SubProto() == flowproto.SubProtoFlow {
+			return
+		}
+	}
+	t.Fatalf("DefaultHub() missing flow subproto=%d", flowproto.SubProtoFlow)
 }
 
 func TestBindServerHooks_OnlyBindableCalled(t *testing.T) {
