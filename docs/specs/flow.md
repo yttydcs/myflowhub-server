@@ -38,6 +38,14 @@ flow 协议（SubProto=6）规范
   - `event`：由 `topicbus.publish` / `topicbus.received` 事件驱动
   - `var_changed`：由 `varstore.changed` / `varstore.deleted` 事件驱动
 
+契约真相源
+----------
+
+- canonical Flow graph/node wire contract 由 `MyFlowHub-Proto/protocol/flow/types.go` 持有。
+- 精确字段表与 kind-to-spec 映射以生成文档 `MyFlowHub-Proto/docs/flow_contract.md` 为准。
+- 本文件是 Server 侧稳定镜像，补充权限、持久化和运行期语义；若 graph/node payload 形状与 Proto typed contract / generated doc 冲突，以 Proto canonical contract 为准。
+- 当前项目未上线，本规范不保留 `local` / `exec` 或其他旧写入形态的兼容要求。
+
 权限
 ----
 
@@ -100,7 +108,9 @@ HeaderTcp 与路由约定
 - `flow_id`：UUID（必填）
 - `name`：string（可选）
 - `max_active_runs`：int（可选）
-  - 省略表示保持 legacy 兼容行为
+  - 省略时沿用当前默认调度策略：
+    - 手动 `run` 允许并发重入
+    - `interval` / `cron` / `event` / `var_changed` trigger 在已有活动 run 时跳过本次启动
   - `0` 表示不限制活动 run 数
   - `>0` 表示统一的活动 run 上限
 - `trigger`：object（必填）
@@ -400,10 +410,11 @@ HeaderTcp 与路由约定
   - 仅允许出现在 `branch` 节点的出边上
   - 表示该边属于哪个 branch case 路由
 
-写入契约与兼容边界：
+写入契约边界：
 
-- 新的 `set` 请求不得再写入 `local` / `exec`
-- 运行期仍允许解释历史存量 `local` / `exec` 数据，以便旧落盘 flow 继续运行
+- `set` 请求只接受当前 canonical contract 中定义的 node kinds、`edge.case` 约束和 kind-tagged spec 形状。
+- `local` / `exec` 不属于当前稳定 Flow graph/node contract，新的 `set` payload 不得写入这些旧形态。
+- 若需要逐字段核对 graph/node wire shape，直接参照 `MyFlowHub-Proto/docs/flow_contract.md`。
 
 数据流执行模型
 --------------
@@ -562,10 +573,10 @@ Transform 表达式模型
    - `exec` 负责路由与权限裁决
 6. 成功时，将 `exec.call_resp.result` 或本地方法返回值写入 `RunContext.nodes[<id>].result`
 
-兼容说明：
+稳定约束：
 
-- 历史存量 `call` 节点若仍使用 `args` 直写且未声明 `inputs`，运行期可继续解释
-- 新写入契约应使用 `args_template + inputs`
+- `call` 新写入契约只使用 `args_template + inputs`
+- `args` 不属于当前 canonical generated contract
 
 节点类型：compose
 -----------------
@@ -704,9 +715,9 @@ Transform 表达式模型
   - 等待期间若 run 被 `cancel_run` 或 `delete` 中断，必须立即停止等待和后续重试
 - `max_active_runs`
   - flow 级活动 run 上限，作用于同一 `flow_id`
-  - 省略时保持 legacy 兼容行为：
+  - 省略时沿用当前默认调度策略：
     - 手动 `run` 继续允许并发重入
-    - `interval/event/var_changed` trigger 继续在已有活动 run 时跳过本次启动
+    - `interval` / `cron` / `event` / `var_changed` trigger 继续在已有活动 run 时跳过本次启动
   - `0` 表示所有启动来源都不限制活动 run 数
   - `>0` 表示手动 `run` 与 trigger 启动都必须遵守统一 active-run 上限
   - 手动 `run` 超限时返回 `409`
@@ -786,7 +797,7 @@ Transform 表达式模型
   - `flow.run_archive.backend` 未配置或为空时：
     - 保持默认关闭；retained window 继续只有内存语义
   - `flow.run_archive_enabled=true`：
-    - 作为 legacy 兼容入口，等价于 `flow.run_archive.backend=file`
+    - 作为布尔快捷开关，等价于 `flow.run_archive.backend=file`
   - `flow.run_archive.backend=file`：
     - retained window 内的终态 run 会以本地 JSON sidecar 形式归档到 `flow.base_dir/_runs/<flow_id>/<run_id>.json`
   - `flow.run_archive.backend=pg`：
