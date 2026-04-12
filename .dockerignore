@@ -1,0 +1,8 @@
+.git
+.github
+.ace-tool
+docs
+tests
+dist
+plan.md
+config/runtime_config.json
