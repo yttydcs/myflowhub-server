@@ -3,6 +3,8 @@
 
 package defaultset
 
+// Context: This file lives in the Server assembly layer and supports topicbus_disabled.
+
 import (
 	"log/slog"
 

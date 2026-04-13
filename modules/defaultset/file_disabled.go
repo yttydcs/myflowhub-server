@@ -3,6 +3,8 @@
 
 package defaultset
 
+// Context: This file lives in the Server assembly layer and supports file_disabled.
+
 import (
 	"log/slog"
 

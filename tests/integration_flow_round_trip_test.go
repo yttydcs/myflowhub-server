@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports integration_flow_round_trip_test.
+
 import (
 	"context"
 	"encoding/json"

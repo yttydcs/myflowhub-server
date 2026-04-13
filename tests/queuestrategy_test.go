@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports queuestrategy_test.
+
 import (
 	"net"
 	"testing"

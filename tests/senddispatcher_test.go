@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports senddispatcher_test.
+
 import (
 	"context"
 	"net"

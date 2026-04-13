@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports exec_handler_test.
+
 import (
 	"context"
 	"testing"
@@ -49,4 +51,3 @@ func TestExecCallRespMajorOKResp(t *testing.T) {
 		t.Fatalf("expected call_resp major=%d, got %d", header.MajorOKResp, srv.sends[0].major)
 	}
 }
-

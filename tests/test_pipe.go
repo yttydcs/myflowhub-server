@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports test_pipe.
+
 import "io"
 
 // nopPipe is a minimal core.IPipe implementation for tests that never exercise stream I/O.

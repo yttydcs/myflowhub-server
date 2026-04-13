@@ -1,5 +1,7 @@
 package main
 
+// Context: This file lives in the Server assembly layer and supports main.
+
 import (
 	"context"
 	"flag"

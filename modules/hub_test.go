@@ -1,5 +1,7 @@
 package modules
 
+// Context: This file lives in the Server assembly layer and supports hub_test.
+
 import (
 	"context"
 	"testing"

@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports header_tcp_test.
+
 import (
 	"bytes"
 	"testing"

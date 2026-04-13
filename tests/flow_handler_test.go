@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports flow_handler_test.
+
 import (
 	"context"
 	"testing"
@@ -47,4 +49,3 @@ func TestFlowSetRespMajorOKRespOnInvalidSet(t *testing.T) {
 		t.Fatalf("expected set_resp major=%d, got %d", header.MajorOKResp, srv.sends[0].major)
 	}
 }
-

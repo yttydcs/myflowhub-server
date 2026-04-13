@@ -1,5 +1,7 @@
 package defaultset
 
+// Context: This file lives in the Server assembly layer and supports runtime_deps.
+
 import (
 	core "github.com/yttydcs/myflowhub-core"
 	permission "github.com/yttydcs/myflowhub-core/kit/permission"

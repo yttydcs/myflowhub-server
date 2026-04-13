@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports varstore_handler_test.
+
 import (
 	"context"
 	"encoding/json"

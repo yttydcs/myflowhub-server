@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports integration_stream_root_hub_connect_test.
+
 import (
 	"encoding/json"
 	"net"

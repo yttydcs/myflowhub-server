@@ -1,5 +1,7 @@
 package flow
 
+// Context: This file lives in the Server assembly layer and supports types.
+
 import protocol "github.com/yttydcs/myflowhub-proto/protocol/flow"
 
 // 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/flow`，

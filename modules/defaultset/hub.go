@@ -1,5 +1,7 @@
 package defaultset
 
+// Context: This file lives in the Server assembly layer and supports hub.
+
 import (
 	"log/slog"
 
