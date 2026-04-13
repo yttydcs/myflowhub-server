@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports integration_management_node_info_test.
+
 import (
 	"encoding/json"
 	"net"

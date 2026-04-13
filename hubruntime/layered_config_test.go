@@ -1,5 +1,7 @@
 package hubruntime
 
+// Context: This file lives in the Server assembly layer and supports layered_config_test.
+
 import (
 	"encoding/json"
 	"os"

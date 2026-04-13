@@ -1,5 +1,7 @@
 package hubruntime
 
+// Context: This file lives in the Server assembly layer and supports runtime_test.
+
 import (
 	"context"
 	"encoding/json"

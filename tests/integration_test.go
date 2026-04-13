@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports integration_test.
+
 import (
 	"bytes"
 	"context"

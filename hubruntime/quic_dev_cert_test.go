@@ -1,5 +1,7 @@
 package hubruntime
 
+// Context: This file lives in the Server assembly layer and supports quic_dev_cert_test.
+
 import (
 	"crypto/tls"
 	"crypto/x509"

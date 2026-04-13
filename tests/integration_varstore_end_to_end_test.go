@@ -1,5 +1,7 @@
 package tests
 
+// Context: This file lives in the Server assembly layer and supports integration_varstore_end_to_end_test.
+
 import (
 	"context"
 	"net"

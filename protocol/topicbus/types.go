@@ -1,5 +1,7 @@
 package topicbus
 
+// Context: This file lives in the Server assembly layer and supports types.
+
 import protocol "github.com/yttydcs/myflowhub-proto/protocol/topicbus"
 
 // 本包为兼容壳：保留原 import path `github.com/yttydcs/myflowhub-server/protocol/topicbus`，

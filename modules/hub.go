@@ -1,5 +1,7 @@
 package modules
 
+// Context: This file lives in the Server assembly layer and supports hub.
+
 import (
 	"errors"
 	"fmt"
