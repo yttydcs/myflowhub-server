@@ -14,7 +14,7 @@ require (
 	github.com/yttydcs/myflowhub-subproto/management v0.1.4
 	github.com/yttydcs/myflowhub-subproto/stream v0.1.0
 	github.com/yttydcs/myflowhub-subproto/topicbus v0.1.2
-	github.com/yttydcs/myflowhub-subproto/varstore v0.1.4
+	github.com/yttydcs/myflowhub-subproto/varstore v0.1.5
 )
 
 require (
