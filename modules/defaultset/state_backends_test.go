@@ -1,6 +1,6 @@
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports state_backends_test.
+// 本文件承载默认模块集合中与 `state_backends` 相关的装配逻辑。
 
 import (
 	"context"

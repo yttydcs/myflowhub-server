@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports stream_enabled.
+// 本文件承载默认模块集合中与 `stream_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -13,5 +13,6 @@ import (
 )
 
 func newStreamHandler(cfg core.IConfig, log *slog.Logger) (core.ISubProcess, error) {
+	// Stream 默认接线只做装配，不把流状态管理细节泄漏到 Server 层。
 	return streamhandler.NewHandlerWithConfig(cfg, log), nil
 }

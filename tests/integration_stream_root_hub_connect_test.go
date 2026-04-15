@@ -1,6 +1,6 @@
 package tests
 
-// Context: This file lives in the Server assembly layer and supports integration_stream_root_hub_connect_test.
+// 本文件覆盖 Server 装配层中与 `integration_stream_root_hub_connect` 相关的集成或单元行为。
 
 import (
 	"encoding/json"

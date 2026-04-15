@@ -1,6 +1,6 @@
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports runtime_deps.
+// 本文件承载默认模块集合中与 `runtime_deps` 相关的装配逻辑。
 
 import (
 	core "github.com/yttydcs/myflowhub-core"
@@ -9,6 +9,7 @@ import (
 	"github.com/yttydcs/myflowhub-subproto/exec/runtimedeps"
 )
 
+// newRuntimeDeps 为默认模块集合提供共享的权限配置和 capability registry。
 func newRuntimeDeps(cfg core.IConfig) runtimedeps.Deps {
 	return runtimedeps.Deps{
 		CapRegistry: execcap.NewRegistry(),

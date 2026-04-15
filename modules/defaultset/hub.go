@@ -1,6 +1,6 @@
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports hub.
+// 本文件承载默认模块集合中与 `hub` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -13,6 +13,7 @@ import (
 // DefaultHub 返回 hub_server 的默认启用模块集合（handlers + default fallback）。
 //
 // 注意：本包仅负责“默认集合的构造策略”，不做重复校验；校验由上层 `modules.DefaultHub` 统一完成。
+// DefaultHub 按默认产品口径拼出一套可直接用于 hub_server 的 handler 集合。
 func DefaultHub(cfg core.IConfig, log *slog.Logger) (handlers []core.ISubProcess, def core.ISubProcess, err error) {
 	deps := newRuntimeDeps(cfg)
 	handlers = make([]core.ISubProcess, 0, 8)

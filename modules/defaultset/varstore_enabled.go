@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports varstore_enabled.
+// 本文件承载默认模块集合中与 `varstore_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -14,6 +14,7 @@ import (
 )
 
 func newVarStoreHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (core.ISubProcess, error) {
+	// VarStore 先在装配层选定持久化后端，再把统一的运行时依赖交给子协议实现。
 	store, err := newVarStorePersistence(cfg)
 	if err != nil {
 		return nil, err

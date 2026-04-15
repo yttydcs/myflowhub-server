@@ -1,6 +1,6 @@
 package tests
 
-// Context: This file lives in the Server assembly layer and supports integration_management_node_info_test.
+// 本文件覆盖 Server 装配层中与 `integration_management_node_info` 相关的集成或单元行为。
 
 import (
 	"encoding/json"

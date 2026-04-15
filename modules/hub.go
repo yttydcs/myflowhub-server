@@ -1,6 +1,6 @@
 package modules
 
-// Context: This file lives in the Server assembly layer and supports hub.
+// 本文件承载 Server 模块装配层中与 `hub` 相关的逻辑。
 
 import (
 	"errors"
@@ -25,6 +25,7 @@ type Set struct {
 }
 
 // DefaultHub 返回 hub_server 的默认启用模块集合。
+// DefaultHub 作为装配层稳定入口，委托 defaultset 构造默认 handler 集合并校验。
 func DefaultHub(cfg core.IConfig, log *slog.Logger) (Set, error) {
 	handlers, def, err := defaultset.DefaultHub(cfg, log)
 	if err != nil {
@@ -41,6 +42,7 @@ func DefaultHub(cfg core.IConfig, log *slog.Logger) (Set, error) {
 }
 
 // RegisterAll 将 Set 注册到 dispatcher。
+// RegisterAll 依次把默认集合挂到 dispatcher 上，但不改变 handler 生命周期语义。
 func RegisterAll(dispatcher Dispatcher, set Set) error {
 	if dispatcher == nil {
 		return errors.New("dispatcher nil")
@@ -74,6 +76,7 @@ func BindServerHooks(srv core.IServer, set Set) {
 	}
 }
 
+// validateSet 防御性检查 nil handler 与重复 SubProto，避免启动期才暴露装配错误。
 func validateSet(set Set) error {
 	if len(set.Handlers) == 0 {
 		return errors.New("handlers empty")

@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports file_enabled.
+// 本文件承载默认模块集合中与 `file_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -14,5 +14,6 @@ import (
 )
 
 func newFileHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (core.ISubProcess, error) {
+	// 默认集合只负责把共享依赖注入 File 子协议，具体传输状态机仍留在子模块内部。
 	return filehandler.NewHandlerWithDeps(cfg, deps, log), nil
 }

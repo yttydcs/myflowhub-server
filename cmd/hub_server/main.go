@@ -1,6 +1,6 @@
 package main
 
-// Context: This file lives in the Server assembly layer and supports main.
+// 本文件提供 Server 中与 `main` 相关的命令入口。
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"github.com/yttydcs/myflowhub-server/hubruntime"
 )
 
+// main 负责把 env/flag 配置归一化后交给 hubruntime 启停。
 func main() {
 	opts := hubruntime.DefaultOptionsFromEnv()
 	nodeID := uint(opts.NodeID)
@@ -85,6 +86,7 @@ func main() {
 	slog.Info("hub server stopped")
 }
 
+// setupLogger 初始化命令行版本使用的全局文本 logger。
 func setupLogger() *slog.Logger {
 	level := new(slog.LevelVar)
 	level.Set(slog.LevelInfo)
@@ -94,12 +96,14 @@ func setupLogger() *slog.Logger {
 	return l
 }
 
+// waitSignal 阻塞等待中断信号，作为 CLI 版 runtime 的退出钩子。
 func waitSignal() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	<-ch
 }
 
+// captureFlagOverrides 把命令行明确传入的 key 标记成显式覆盖项。
 func captureFlagOverrides(opts *hubruntime.Options) {
 	if opts == nil {
 		return

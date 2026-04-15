@@ -1,6 +1,6 @@
 package tests
 
-// Context: This file lives in the Server assembly layer and supports default_handler_test.
+// 本文件覆盖 Server 装配层中与 `default_handler` 相关的集成或单元行为。
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 )
 
 // 验证：未配置 default forward 时，默认转发到父节点
+// TestDefaultHandlerForwardToParentByDefault 验证默认兜底行为会把未知子协议上送父节点。
 func TestDefaultHandlerForwardToParentByDefault(t *testing.T) {
 	cm := connmgr.New()
 	parent := newStubConn("parent-1")
@@ -37,6 +38,7 @@ func TestDefaultHandlerForwardToParentByDefault(t *testing.T) {
 }
 
 // 验证：显式关闭 forward 时丢弃
+// TestDefaultHandlerDropWhenDisabled 验证显式关闭默认转发后请求会被本地丢弃。
 func TestDefaultHandlerDropWhenDisabled(t *testing.T) {
 	cm := connmgr.New()
 	parent := newStubConn("parent-1")

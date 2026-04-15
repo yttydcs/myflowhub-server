@@ -1,6 +1,6 @@
 package tests
 
-// Context: This file lives in the Server assembly layer and supports senddispatcher_test.
+// 本文件覆盖 Server 装配层中与 `senddispatcher` 相关的集成或单元行为。
 
 import (
 	"context"

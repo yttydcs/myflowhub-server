@@ -1,6 +1,6 @@
 package hubruntime
 
-// Context: This file lives in the Server assembly layer and supports layered_config.
+// 本文件承载 `hubruntime` 中与 `layered_config` 相关的逻辑。
 
 import (
 	"encoding/json"
@@ -29,6 +29,7 @@ type layeredConfig struct {
 	effective  map[string]string
 }
 
+// buildConfig 以默认值、持久配置和显式传参三层叠加构造 runtime 配置。
 func buildConfig(opts Options) (core.IConfig, error) {
 	return newLayeredConfig(
 		runtimeConfigFile,
@@ -37,6 +38,7 @@ func buildConfig(opts Options) (core.IConfig, error) {
 	)
 }
 
+// newLayeredConfig 加载持久配置文件，并生成一份线程安全的层叠配置视图。
 func newLayeredConfig(path string, defaults, explicit map[string]string) (*layeredConfig, error) {
 	path = filepath.Clean(strings.TrimSpace(path))
 	if path == "" {
@@ -58,6 +60,7 @@ func newLayeredConfig(path string, defaults, explicit map[string]string) (*layer
 	return cfg, nil
 }
 
+// Get 从当前生效配置快照中读取键值。
 func (c *layeredConfig) Get(key string) (string, bool) {
 	if c == nil {
 		return "", false
@@ -72,6 +75,7 @@ func (c *layeredConfig) Get(key string) (string, bool) {
 	return val, ok
 }
 
+// Keys 返回当前生效配置里的全部键，并保持稳定排序。
 func (c *layeredConfig) Keys() []string {
 	if c == nil {
 		return nil
@@ -87,6 +91,7 @@ func (c *layeredConfig) Keys() []string {
 }
 
 // Set keeps current behavior: runtime-only overlay without touching persisted storage.
+// Set 只写运行期 overlay，不落盘，适合临时热更新。
 func (c *layeredConfig) Set(key, val string) {
 	if c == nil {
 		return
@@ -101,6 +106,7 @@ func (c *layeredConfig) Set(key, val string) {
 	c.mu.Unlock()
 }
 
+// SetPersistent 先写磁盘，再切换内存视图，确保重启后仍然生效。
 func (c *layeredConfig) SetPersistent(key, val string) error {
 	if c == nil {
 		return errors.New("config not initialized")
@@ -127,6 +133,7 @@ func (c *layeredConfig) SetPersistent(key, val string) error {
 	return nil
 }
 
+// Merge 把另一份配置叠加到 runtime overlay，常用于动态注入。
 func (c *layeredConfig) Merge(other core.IConfig) core.IConfig {
 	if c == nil || other == nil {
 		return c
@@ -144,6 +151,7 @@ func (c *layeredConfig) Merge(other core.IConfig) core.IConfig {
 	return c
 }
 
+// recomputeLocked 按 defaults -> persistent -> explicit -> runtime 的优先级重建快照。
 func (c *layeredConfig) recomputeLocked() {
 	merged := cloneStringMap(c.defaults)
 	mergeStringMap(merged, c.persistent)
@@ -152,6 +160,7 @@ func (c *layeredConfig) recomputeLocked() {
 	c.effective = snapshotConfig(coreconfig.NewMap(merged))
 }
 
+// configDataFromOptions 把 Options 投影成 Core runtime 所需的扁平键值。
 func configDataFromOptions(opts Options) map[string]string {
 	return map[string]string{
 		"addr":                           strings.TrimSpace(opts.Addr),
@@ -178,6 +187,7 @@ func configDataFromOptions(opts Options) map[string]string {
 	}
 }
 
+// explicitConfigDataFromOptions 只保留显式覆盖或相对默认值发生变化的项。
 func explicitConfigDataFromOptions(opts Options) map[string]string {
 	current := configDataFromOptions(opts)
 	defaults := configDataFromOptions(DefaultOptions())
@@ -191,6 +201,7 @@ func explicitConfigDataFromOptions(opts Options) map[string]string {
 	return explicit
 }
 
+// applyConfigToOptions 把层叠配置重新投影回 Options，供 runtime 启动阶段使用。
 func applyConfigToOptions(opts Options, cfg core.IConfig) Options {
 	if cfg == nil {
 		return opts

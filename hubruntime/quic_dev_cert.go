@@ -1,6 +1,6 @@
 package hubruntime
 
-// Context: This file lives in the Server assembly layer and supports quic_dev_cert.
+// 本文件承载 `hubruntime` 中与 `quic_dev_cert` 相关的逻辑。
 
 import (
 	"crypto/ecdsa"
@@ -25,6 +25,7 @@ const (
 	quicDevKeyFileName  = "quic-dev-key.pem"
 )
 
+// ensureQUICDevCertIfNeeded 在开发模式下自动补齐 QUIC 所需的自签名证书。
 func ensureQUICDevCertIfNeeded(opts *Options, log *slog.Logger) error {
 	if opts == nil || !opts.QUICEnable || !opts.QUICDevCertAuto {
 		return nil
@@ -71,6 +72,7 @@ func ensureQUICDevCertIfNeeded(opts *Options, log *slog.Logger) error {
 	return nil
 }
 
+// generateSelfSignedQUICDevCert 生成一次性的本地开发证书和私钥 PEM。
 func generateSelfSignedQUICDevCert() ([]byte, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

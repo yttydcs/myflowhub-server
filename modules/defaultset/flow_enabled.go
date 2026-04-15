@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports flow_enabled.
+// 本文件承载默认模块集合中与 `flow_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -14,6 +14,7 @@ import (
 )
 
 func newFlowHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (core.ISubProcess, error) {
+	// Flow 需要先解析定义持久化与 run archive 后端，避免 handler 内部硬编码存储实现。
 	store, err := newFlowPersistence(cfg)
 	if err != nil {
 		return nil, err

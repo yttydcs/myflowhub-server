@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports topicbus_enabled.
+// 本文件承载默认模块集合中与 `topicbus_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
@@ -14,5 +14,6 @@ import (
 )
 
 func newTopicBusHandler(cfg core.IConfig, deps runtimedeps.Deps, log *slog.Logger) (core.ISubProcess, error) {
+	// TopicBus 依赖 capability registry 等共享运行时依赖，因此在默认装配阶段统一注入。
 	return topicbushandler.NewTopicBusHandlerWithDeps(cfg, deps, log), nil
 }

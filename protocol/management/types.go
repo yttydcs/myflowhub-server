@@ -1,6 +1,6 @@
 package management
 
-// Context: This file lives in the Server assembly layer and supports types.
+// 本文件承载 Server 仓内复用的 `management` 协议类型定义。
 
 import protocol "github.com/yttydcs/myflowhub-proto/protocol/management"
 

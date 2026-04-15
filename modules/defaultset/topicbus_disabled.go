@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports topicbus_disabled.
+// 本文件承载默认模块集合中与 `topicbus_disabled` 相关的装配逻辑。
 
 import (
 	"log/slog"

@@ -1,6 +1,6 @@
 package hubruntime
 
-// Context: This file lives in the Server assembly layer and supports runtime_test.
+// 本文件覆盖 `hubruntime` 中与 `runtime` 相关的行为。
 
 import (
 	"context"

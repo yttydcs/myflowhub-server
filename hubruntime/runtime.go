@@ -1,6 +1,6 @@
 package hubruntime
 
-// Context: This file lives in the Server assembly layer and supports runtime.
+// 本文件承载 `hubruntime` 中与 `runtime` 相关的逻辑。
 
 import (
 	"context"
@@ -66,6 +66,7 @@ type Runtime struct {
 	msgSeq atomic.Uint32
 }
 
+// New 校验监听器开关并创建可嵌入的 Hub runtime 实例。
 func New(opts Options) (*Runtime, error) {
 	opts.Normalize()
 	if !opts.TCPEnable && !opts.RFCOMMEnable && !opts.QUICEnable {
@@ -77,6 +78,7 @@ func New(opts Options) (*Runtime, error) {
 	return &Runtime{opts: opts, log: opts.Logger}, nil
 }
 
+// Start 负责工作目录切换、层叠配置构建、默认模块装配以及父链 bootstrap。
 func (r *Runtime) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -270,6 +272,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop 终止 watcher、停止 server，并恢复启动前的工作目录。
 func (r *Runtime) Stop(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -300,6 +303,7 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	return stopErr
 }
 
+// Status 返回面向宿主或 CLI 的当前 runtime 快照。
 func (r *Runtime) Status() Status {
 	r.mu.Lock()
 	opts := r.opts
@@ -325,6 +329,7 @@ func (r *Runtime) Status() Status {
 	return st
 }
 
+// applyWorkDir 在启动前切到应用私有目录，使相对路径配置能稳定落盘。
 func (r *Runtime) applyWorkDir(dir string) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", nil
@@ -351,6 +356,7 @@ func (r *Runtime) applyWorkDir(dir string) (string, error) {
 	return abs, nil
 }
 
+// restoreWorkDir 把进程 cwd 恢复到启动前的目录。
 func (r *Runtime) restoreWorkDir() error {
 	r.mu.Lock()
 	prev := r.workdirPrev
@@ -362,6 +368,7 @@ func (r *Runtime) restoreWorkDir() error {
 	return os.Chdir(prev)
 }
 
+// startParentBootstrapWatcher 监听持久父连接建立，并在其上补发 auth register。
 func (r *Runtime) startParentBootstrapWatcher(cfg core.IConfig) {
 	r.mu.Lock()
 	if r.srv == nil || r.parentWatchCancel != nil {
@@ -426,6 +433,7 @@ func (r *Runtime) startParentBootstrapWatcher(cfg core.IConfig) {
 	}()
 }
 
+// ensureConnNodeIDNonZero 给 parent 连接补一个非零 nodeID，以通过早期 source 校验。
 func ensureConnNodeIDNonZero(conn core.IConnection, fallback uint32) (ensured bool) {
 	if conn == nil || fallback == 0 {
 		return false
@@ -454,6 +462,7 @@ func ensureConnNodeIDNonZero(conn core.IConnection, fallback uint32) (ensured bo
 	return true
 }
 
+// selfRegisterNodeID 在 runtime 启动前短路完成一次自注册，拿到父节点分配的 nodeID。
 func selfRegisterNodeID(
 	ctx context.Context,
 	parentTarget, selfID, joinPermit string,
@@ -486,6 +495,7 @@ func selfRegisterNodeID(
 	return nodeID, nil
 }
 
+// trimmedConfigValue 读取配置键并返回去空白后的结果。
 func trimmedConfigValue(cfg core.IConfig, key string) string {
 	if cfg == nil {
 		return ""
@@ -497,6 +507,7 @@ func trimmedConfigValue(cfg core.IConfig, key string) string {
 	return strings.TrimSpace(val)
 }
 
+// sendRegisterOnConn 在已建立的父连接上发送一次 auth register，绑定该持久链路的 meta(nodeID)。
 func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, displayName, joinPermit string, seq *atomic.Uint32) error {
 	if ctx == nil {
 		return errors.New("ctx nil")
@@ -532,6 +543,7 @@ func sendRegisterOnConn(ctx context.Context, conn core.IConnection, selfID, disp
 	return conn.SendWithHeader(hdr, payload, header.HeaderTcpCodec{})
 }
 
+// findParentConn 在连接管理器里查找当前父链连接。
 func findParentConn(cm core.IConnectionManager) (core.IConnection, bool) {
 	if cm == nil {
 		return nil, false
@@ -552,6 +564,7 @@ func findParentConn(cm core.IConnectionManager) (core.IConnection, bool) {
 	return parent, parent != nil
 }
 
+// boolString 把布尔值映射成配置层使用的字符串字面量。
 func boolString(v bool) string {
 	if v {
 		return "true"
@@ -559,6 +572,7 @@ func boolString(v bool) string {
 	return "false"
 }
 
+// effectiveParentTarget 优先使用带 scheme 的 ParentEndpoint，再退化到旧的 ParentAddr。
 func effectiveParentTarget(opts Options) string {
 	if strings.TrimSpace(opts.ParentEndpoint) != "" {
 		return strings.TrimSpace(opts.ParentEndpoint)
@@ -566,6 +580,7 @@ func effectiveParentTarget(opts Options) string {
 	return strings.TrimSpace(opts.ParentAddr)
 }
 
+// parseParentEndpoint 统一验证 parent endpoint，并兼容旧的裸 tcp 地址写法。
 func parseParentEndpoint(target string) (scheme string, tcpAddr string, err error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
@@ -602,6 +617,7 @@ func parseParentEndpoint(target string) (scheme string, tcpAddr string, err erro
 	}
 }
 
+// dialParentEndpoint 根据 endpoint scheme 选择对应 transport 的拨号器。
 func dialParentEndpoint(ctx context.Context, target string) (core.IConnection, error) {
 	scheme, tcpAddr, err := parseParentEndpoint(target)
 	if err != nil {
@@ -624,6 +640,7 @@ func dialParentEndpoint(ctx context.Context, target string) (core.IConnection, e
 	}
 }
 
+// storeErr 保存最近一次可见错误，供宿主通过 Status 读取。
 func (r *Runtime) storeErr(err error) {
 	if err == nil {
 		return
@@ -631,6 +648,7 @@ func (r *Runtime) storeErr(err error) {
 	r.lastErr.Store(err.Error())
 }
 
+// loadErr 读取最近一次记录的错误文本。
 func (r *Runtime) loadErr() string {
 	if v := r.lastErr.Load(); v != nil {
 		if s, ok := v.(string); ok {

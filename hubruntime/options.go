@@ -1,6 +1,6 @@
 package hubruntime
 
-// Context: This file lives in the Server assembly layer and supports options.
+// 本文件承载 `hubruntime` 中与 `options` 相关的逻辑。
 
 import (
 	"log/slog"
@@ -93,6 +93,7 @@ type Options struct {
 	Logger *slog.Logger
 }
 
+// DefaultOptions 提供与 hub_server CLI 对齐的默认运行参数。
 func DefaultOptions() Options {
 	return Options{
 		TCPEnable:             true,
@@ -139,6 +140,7 @@ func DefaultOptions() Options {
 	}
 }
 
+// DefaultOptionsFromEnv 读取环境变量，并同步记录哪些键属于显式覆盖。
 func DefaultOptionsFromEnv() Options {
 	opts := DefaultOptions()
 
@@ -270,6 +272,7 @@ func DefaultOptionsFromEnv() Options {
 	return opts
 }
 
+// Normalize 补齐缺省值并清洗输入，保证后续构建配置时语义稳定。
 func (o *Options) Normalize() {
 	if o == nil {
 		return
@@ -371,6 +374,7 @@ func (o *Options) Normalize() {
 	o.ConfigOverrideKeys = joinOverrideKeys(splitOverrideKeys(o.ConfigOverrideKeys))
 }
 
+// AddConfigOverrideKeys 记录调用方显式给出的配置键，避免 Normalize 覆盖它们。
 func (o *Options) AddConfigOverrideKeys(keys ...string) {
 	if o == nil {
 		return
@@ -386,10 +390,12 @@ func (o *Options) AddConfigOverrideKeys(keys ...string) {
 	o.ConfigOverrideKeys = joinOverrideKeys(set)
 }
 
+// configOverrideKeySet 把逗号分隔字符串转成便于查询的 set。
 func (o Options) configOverrideKeySet() map[string]struct{} {
 	return splitOverrideKeys(o.ConfigOverrideKeys)
 }
 
+// splitOverrideKeys 兼容逗号、分号和空白分隔的覆盖键列表。
 func splitOverrideKeys(raw string) map[string]struct{} {
 	out := make(map[string]struct{})
 	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
@@ -404,6 +410,7 @@ func splitOverrideKeys(raw string) map[string]struct{} {
 	return out
 }
 
+// joinOverrideKeys 生成稳定排序后的覆盖键字符串，便于持久化与比较。
 func joinOverrideKeys(set map[string]struct{}) string {
 	if len(set) == 0 {
 		return ""
@@ -416,6 +423,7 @@ func joinOverrideKeys(set map[string]struct{}) string {
 	return strings.Join(keys, ",")
 }
 
+// lookupEnvString 读取并裁剪字符串环境变量。
 func lookupEnvString(key string) (string, bool) {
 	raw, ok := os.LookupEnv(key)
 	if !ok {
@@ -424,6 +432,7 @@ func lookupEnvString(key string) (string, bool) {
 	return strings.TrimSpace(raw), true
 }
 
+// lookupEnvBool 只接受明确的 true/false 字面值，避免脏输入进入配置。
 func lookupEnvBool(key string) (bool, bool) {
 	raw, ok := os.LookupEnv(key)
 	if !ok {
@@ -439,6 +448,7 @@ func lookupEnvBool(key string) (bool, bool) {
 	}
 }
 
+// lookupEnvInt 读取十进制整数字段。
 func lookupEnvInt(key string) (int64, bool) {
 	raw, ok := os.LookupEnv(key)
 	if !ok {
@@ -451,6 +461,7 @@ func lookupEnvInt(key string) (int64, bool) {
 	return n, true
 }
 
+// lookupEnvUint32 读取 uint32 范围内的节点号等配置。
 func lookupEnvUint32(key string) (uint32, bool) {
 	raw, ok := os.LookupEnv(key)
 	if !ok {

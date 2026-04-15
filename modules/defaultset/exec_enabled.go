@@ -3,7 +3,7 @@
 
 package defaultset
 
-// Context: This file lives in the Server assembly layer and supports exec_enabled.
+// 本文件承载默认模块集合中与 `exec_enabled` 相关的装配逻辑。
 
 import (
 	"log/slog"
